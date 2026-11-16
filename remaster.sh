@@ -1,10 +1,14 @@
 #!/bin/bash
-# Remaster the Ubuntu 26.04.1 arm64 desktop ISO for the Samsung Galaxy Book4 Edge 16".
+# Remaster the Ubuntu 26.10 arm64 desktop ISO into Ubuntu 27.04 for the Samsung Galaxy Book4 Edge 16".
+# Ubuntu publishes no 27.04 arm64 desktop image yet, so every layer of the 26.10 image is upgraded to 27.04
+# ("tenacious") from ports.ubuntu.com while it is remastered.
 # Runs inside the sb4build container (--privileged), /iso = scratch volume, /work = project dir.
 set -euo pipefail
 KVER=7.4.0-rc3-sb4edge
-ORIG=/work/iso/ubuntu-26.04.1-desktop-arm64.iso
-OUT=/work/out/ubuntu-26.04.1-sb4edge-desktop-arm64.iso
+ORIG=/work/iso/ubuntu-26.10-desktop-arm64.iso
+OUT=/work/out/ubuntu-27.04-sb4edge-desktop-arm64.iso
+FROM_SUITE=stonking   # the ISO's release (its pool and sources)
+SUITE=tenacious       # the release the layers are upgraded to
 SRC=/iso/src
 B=/iso/base
 SQ="-comp xz -b 131072 -noappend -no-progress -processors 14"
@@ -39,7 +43,7 @@ install -m755 /work/overlay/50-sb4edge-stubble "$B/etc/kernel/postinst.d/50-sb4e
 # packages below): without them a kernel deb installed later boots without a devicetree and the laptop resets.
 
 log "install packages in chroot (ISO pool only, so nothing gets upgraded)"
-echo "deb [trusted=yes] file:/cdrom resolute main" > "$B/tmp/cdrom.list"
+echo "deb [trusted=yes] file:/cdrom $FROM_SUITE main" > "$B/tmp/cdrom.list"
 chroot "$B" /bin/bash -euxc "
 export DEBIAN_FRONTEND=noninteractive FK_MACHINE=none
 APT='-o Dir::Etc::sourcelist=/tmp/cdrom.list -o Dir::Etc::sourceparts=/nonexistent'
@@ -52,15 +56,20 @@ rm -rf /tmp/pkgs /tmp/cdrom.list
 "
 rm -rf "$B/var/lib/apt/lists"; mv /iso/apt-lists.orig "$B/var/lib/apt/lists"
 
-# Bring a layer up to date from the Ubuntu archive (resolute-updates/-security), so a fresh
-# install needs no immediate update. Uses only ubuntu.sources (not the cdrom source); plain
-# upgrade keeps back anything that needs new packages (e.g. newer generic kernels).
+# Upgrade a layer to $SUITE from the Ubuntu archive. Uses only ubuntu.sources (not the cdrom source), rewritten to
+# $SUITE on ports.ubuntu.com (arm64 for the development series is only there), so the installed system follows
+# $SUITE too. dist-upgrade: a release upgrade brings new and renamed packages; removals are listed in the log.
+# Held packages (our kernel) stay. Generic kernels are never pulled in: the installer gets linux-image-$KVER.
 cat > /iso/net-upgrade.sh <<"EOS"
 #!/bin/bash
 set -euxo pipefail
 export DEBIAN_FRONTEND=noninteractive FK_MACHINE=none
+F=/etc/apt/sources.list.d/ubuntu.sources
+sed -i -e "s/\b@FROM@\b/@SUITE@/g" -e "s|http://archive.ubuntu.com/ubuntu/\?|http://ports.ubuntu.com/ubuntu-ports/|" \
+       -e "s|http://security.ubuntu.com/ubuntu/\?|http://ports.ubuntu.com/ubuntu-ports/|" "$F"
+grep -q "@SUITE@" "$F"
 mkdir -p /tmp/net-sources
-cp /etc/apt/sources.list.d/ubuntu.sources /tmp/net-sources/
+cp "$F" /tmp/net-sources/
 APT=(-o Dir::Etc::sourcelist=/dev/null -o Dir::Etc::sourceparts=/tmp/net-sources
      -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold)
 apt-get "${APT[@]}" update
@@ -72,10 +81,12 @@ if ! apt-get "${APT[@]}" check >/dev/null 2>&1; then
 	fi
 	apt-get "${APT[@]}" -y -f install
 fi
-apt-get "${APT[@]}" -y upgrade
+apt-get "${APT[@]}" -s dist-upgrade | grep "^Remv " || true
+apt-get "${APT[@]}" -y dist-upgrade
 apt-get clean
 rm -rf /tmp/net-sources
 EOS
+sed -i -e "s/@FROM@/$FROM_SUITE/g" -e "s/@SUITE@/$SUITE/g" /iso/net-upgrade.sh
 chroot_net_upgrade() { # chroot_net_upgrade <root>  (proc/sys/dev already bound)
 	mount -t tmpfs tmpfs "$1/run"
 	mkdir -p "$1/run/systemd/resolve"; cp /etc/resolv.conf "$1/run/systemd/resolve/stub-resolv.conf"
@@ -112,6 +123,25 @@ mkdir -p "$B/etc/systemd/system/ssh.service.d"
 printf '[Service]\nExecStartPre=/usr/bin/ssh-keygen -A\n' > "$B/etc/systemd/system/ssh.service.d/sb4edge-hostkeys.conf"
 rm -rf "$B/var/lib/apt/lists"; mv /iso/apt-lists.orig "$B/var/lib/apt/lists"
 
+log "GNOME Settings + settings daemon with the sb4edge patches (out/gnome, build-gnome.sh)"
+# Fingerprint rename in Settings (Windows Hello prints are numbered, not named) and the automatic-brightness modes.
+# Installed in the base layer, so both install options get them. sb4edge-gnome-rebuild (apt hook) rebuilds them
+# from source after a GNOME update from the archive; the pkexec rule gives the rename its password prompt.
+mkdir -p "$B/tmp/gnome"; cp /work/out/gnome/*.deb "$B/tmp/gnome/"
+chroot "$B" /bin/bash -euxc '
+debs=(); for d in /tmp/gnome/*.deb; do p=$(dpkg-deb -f "$d" Package)
+    dpkg-query -W -f="\${Status}" "$p" 2>/dev/null | grep -q "ok installed" && debs+=("$d"); done
+dpkg -i "${debs[@]}"; rm -rf /tmp/gnome
+dpkg-query -W -f="\${Version}" gnome-control-center | grep -q sb4edge
+dpkg-query -W -f="\${Version}" gnome-settings-daemon | grep -q sb4edge'
+for d in gnome-control-center gnome-settings-daemon; do
+    install -Dm644 -t "$B/usr/share/sb4edge/patches/$d" /work/patches/$d/*.patch
+done
+install -Dm755 /work/overlay/gnome-rebuild/sb4edge-gnome-rebuild "$B/usr/lib/sb4edge/sb4edge-gnome-rebuild"
+install -Dm644 /work/overlay/gnome-rebuild/sb4edge-gnome-rebuild@.service "$B/usr/lib/systemd/system/sb4edge-gnome-rebuild@.service"
+install -Dm644 /work/overlay/gnome-rebuild/99-sb4edge-gnome-rebuild "$B/etc/apt/apt.conf.d/99-sb4edge-gnome-rebuild"
+install -Dm644 /work/overlay/fingerprint/org.sb4edge.fingerprint-rename.policy "$B/usr/share/polkit-1/actions/org.sb4edge.fingerprint-rename.policy"
+
 log "hardware fixes from the first USB boot (hw-report/)"
 # Wi-Fi: board-2.bin has no entry for this board (subsystem 17cb:1107, board-id 255). Samsung's Windows
 # bdwlan.elf crashes the firmware during the board-data download, so add an entry that reuses
@@ -143,6 +173,15 @@ install -Dm644 /work/out/gb4e_typec.ko "$B/usr/lib/modules/$KVER/updates/gb4e_ty
 install -Dm644 /work/overlay/sb4edge-modules.conf "$B/etc/modules-load.d/sb4edge.conf"
 install -Dm644 /work/overlay/63-sb4edge-usb-hub-pm.rules "$B/usr/lib/udev/rules.d/63-sb4edge-usb-hub-pm.rules"
 install -Dm644 /work/overlay/sb4edge-grub.cfg "$B/etc/default/grub.d/60-sb4edge.cfg"
+# Sleep (overlay/sleep): s2idle (deep returns at once on X1E), and no suspend while an HDMI/USB-C monitor is
+# connected (the msm DP bridge does not come back after s2idle and GNOME freezes). The newest -sb4edge kernel stays
+# GRUB's default even when the archive brings a newer Ubuntu kernel.
+install -Dm644 /work/overlay/sleep/sb4edge-s2idle.conf "$B/etc/systemd/sleep.conf.d/sb4edge-s2idle.conf"
+install -Dm755 /work/overlay/sleep/sb4edge-hdmi-sleep-guard "$B/usr/lib/sb4edge/sb4edge-hdmi-sleep-guard"
+install -Dm644 /work/overlay/sleep/sb4edge-hdmi-sleep-guard.service "$B/etc/systemd/system/sb4edge-hdmi-sleep-guard.service"
+mkdir -p "$B/etc/systemd/system/multi-user.target.wants"
+ln -sf ../sb4edge-hdmi-sleep-guard.service "$B/etc/systemd/system/multi-user.target.wants/sb4edge-hdmi-sleep-guard.service"
+install -Dm644 /work/overlay/sleep/zz-sb4edge-kernel.cfg "$B/etc/default/grub.d/zz-sb4edge-kernel.cfg"
 chroot "$B" depmod -a "$KVER"
 install -Dm644 /work/overlay/sb4edge-battery.conf "$B/etc/modprobe.d/sb4edge-battery.conf"
 install -Dm644 /work/overlay/sb4edge-battery-dracut.conf "$B/etc/dracut.conf.d/sb4edge-battery.conf"
@@ -186,6 +225,28 @@ install -Dm644 /work/overlay/70-sb4edge-ddc.rules "$B/usr/lib/udev/rules.d/70-sb
 EXT=display-brightness-ddcutil@themightydeity.github.com
 mkdir -p "$B/usr/share/gnome-shell/extensions/$EXT"
 python3 -m zipfile -e "/work/overlay/gnome/$EXT.zip" "$B/usr/share/gnome-shell/extensions/$EXT"
+# v59 declares GNOME 49-50 and works on 51 unchanged. Defaults: skip the display-state check (the Odyssey G95NC
+# reports D6=x00 and was skipped, stuck on "initializing") and --noverify (verify reads back too early, the retries
+# made the slider jump the wrong way).
+python3 - "$B/usr/share/gnome-shell/extensions/$EXT/metadata.json" <<"PY"
+import json, sys
+p = sys.argv[1]; m = json.load(open(p))
+m["shell-version"] = sorted(set(m["shell-version"]) | {"51"}, key=int)
+json.dump(m, open(p, "w"), indent=2)
+PY
+X="$B/usr/share/gnome-shell/extensions/$EXT/schemas/org.gnome.shell.extensions.display-brightness-ddcutil.gschema.xml"
+python3 - "$X" <<"PY"
+import re, sys
+p = sys.argv[1]; s = open(p).read()
+def default(key, value):
+    global s
+    s, n = re.subn(r'(<key type="\w" name="%s">\s*<default>)(.*?)(</default>)' % key, lambda m: m.group(1) + value + m.group(3), s, flags=re.S)
+    assert n == 1, key
+default("disable-display-state-check", "true")
+default("ddcutil-additional-args", "'--noverify'")
+open(p, "w").write(s)
+PY
+chroot "$B" glib-compile-schemas "/usr/share/gnome-shell/extensions/$EXT/schemas"
 chmod -R u=rwX,go=rX "$B/usr/share/gnome-shell/extensions/$EXT"
 install -Dm644 /work/overlay/gnome/90-sb4edge-extensions.gschema.override "$B/usr/share/glib-2.0/schemas/90-sb4edge-extensions.gschema.override"
 chroot "$B" glib-compile-schemas /usr/share/glib-2.0/schemas
@@ -293,33 +354,8 @@ assert any(n.startswith(".dtbauto") for n in names), "kernel was not wrapped wit
 PY
 ls -la "$B/boot"
 
-log "live initrd (initramfs-tools + casper) via overlay of live layers"
-L=/iso/live; rm -rf $L; mkdir -p $L/{std,live,upper,work,root}
-mount -t squashfs -o loop,ro $SRC/casper/minimal.standard.squashfs $L/std
-mount -t squashfs -o loop,ro $SRC/casper/minimal.standard.live.squashfs $L/live
-mount -t overlay overlay -o lowerdir=$L/live:$L/std:$B,upperdir=$L/upper,workdir=$L/work $L/root
-for d in proc sys dev; do mount --bind /$d $L/root/$d; done
-# The casper hook writes a random UUID (uuidgen -r); casper only accepts a medium whose
-# .disk/casper-uuid-generic matches it, so run after casper and pin the ISO's UUID.
-cat > $L/root/etc/initramfs-tools/hooks/zz-sb4edge-casper-uuid <<HOOK
-#!/bin/sh
-PREREQ="casper"
-prereqs() { echo "\$PREREQ"; }
-case "\$1" in prereqs) prereqs; exit 0 ;; esac
-mkdir -p "\$DESTDIR/conf/conf.d"
-echo "$(cat $SRC/.disk/casper-uuid-generic)" > "\$DESTDIR/conf/uuid.conf"
-echo 'ROOT=""' > "\$DESTDIR/conf/conf.d/default_root"
-HOOK
-chmod +x $L/root/etc/initramfs-tools/hooks/zz-sb4edge-casper-uuid
-chroot $L/root mkinitramfs -o /tmp/initrd-sb4edge $KVER
-mkdir -p /iso/chk && (cd /iso/chk && chroot $L/root unmkinitramfs /tmp/initrd-sb4edge /tmp/chk && { cat $L/root/tmp/chk/main/conf/uuid.conf $L/root/tmp/chk/conf/uuid.conf 2>/dev/null || true; }; rm -rf $L/root/tmp/chk)
-echo "expected uuid: $(cat $SRC/.disk/casper-uuid-generic)"
-cp $L/root/tmp/initrd-sb4edge $SRC/casper/initrd-sb4edge
-for d in proc sys dev; do umount $L/root/$d; done
-umount $L/root $L/live $L/std
-rm -rf $L
-cp "$B/boot/vmlinuz-$KVER" $SRC/casper/vmlinuz-sb4edge
-ls -la $SRC/casper/*sb4edge*
+# The kernel for the live boot entry (the live initrd is built at the end, from the upgraded layers).
+cp "$B/boot/vmlinuz-$KVER" /iso/vmlinuz-sb4edge
 
 log "chroot teardown"
 umount "$B/cdrom"; for d in dev/pts dev sys proc; do umount "$B/$d"; done
@@ -407,9 +443,62 @@ echo "desktop layer size delta: $STDDELTA"
 echo $(( $(cat $SRC/casper/minimal.standard.size) + STDDELTA )) > $SRC/casper/minimal.standard.size
 rm -rf $S /iso/std-w $M /iso/std-b
 
+log "upgrade live layer (minimal.standard.live) over the upgraded desktop and base layers"
+# The live session's own packages (casper, installer support) are upgraded the same way as the desktop layer.
+LV=/iso/lv LM=/iso/lv-m
+rm -rf $LV $LM /iso/lv-w /iso/lv-b /iso/lv-s; mkdir -p $LM /iso/lv-w /iso/lv-b /iso/lv-s
+unsquashfs -no-progress -d $LV $SRC/casper/minimal.standard.live.squashfs >/dev/null
+LIVE_BEFORE=$(du -sB1 $LV | cut -f1)
+python3 /work/dpkgstatus.py merge $LV/var/lib/dpkg/status /iso/changed.json /iso/status.before
+python3 /work/dpkgstatus.py merge $LV/var/lib/dpkg/status /iso/changed-std.json /iso/std-status.before
+rm -rf /iso/lv-lists.orig; [ ! -e $LV/var/lib/apt/lists ] || cp -a $LV/var/lib/apt/lists /iso/lv-lists.orig
+mount -t squashfs -o loop,ro $SRC/casper/minimal.squashfs /iso/lv-b
+mount -t squashfs -o loop,ro $SRC/casper/minimal.standard.squashfs /iso/lv-s
+mount -t overlay overlay -o lowerdir=/iso/lv-s:/iso/lv-b,upperdir=$LV,workdir=/iso/lv-w,index=off,redirect_dir=off,metacopy=off $LM
+for d in proc sys dev dev/pts; do mount --bind /$d $LM/$d; done
+chroot_net_upgrade $LM
+for d in dev/pts dev sys proc; do umount $LM/$d; done
+umount $LM /iso/lv-s /iso/lv-b
+rm -rf $LV/var/lib/apt/lists $LV/var/cache/apt/*.bin
+[ ! -e /iso/lv-lists.orig ] || mv /iso/lv-lists.orig $LV/var/lib/apt/lists
+mksquashfs $LV $SRC/casper/minimal.standard.live.squashfs.new $SQ \
+    -xattrs-exclude '^trusted\.overlay\.(origin|impure|nlink|upper|redirect|metacopy)$' >/dev/null
+mv $SRC/casper/minimal.standard.live.squashfs.new $SRC/casper/minimal.standard.live.squashfs
+echo $(( $(cat $SRC/casper/minimal.standard.live.size) + $(du -sB1 $LV | cut -f1) - LIVE_BEFORE )) > $SRC/casper/minimal.standard.live.size
+rm -rf $LV $LM /iso/lv-w /iso/lv-b /iso/lv-s
+
+log "live initrd (initramfs-tools + casper) via overlay of live layers"
+L=/iso/live; rm -rf $L; mkdir -p $L/{base,std,live,upper,work,root}
+mount -t squashfs -o loop,ro $SRC/casper/minimal.squashfs $L/base
+mount -t squashfs -o loop,ro $SRC/casper/minimal.standard.squashfs $L/std
+mount -t squashfs -o loop,ro $SRC/casper/minimal.standard.live.squashfs $L/live
+mount -t overlay overlay -o lowerdir=$L/live:$L/std:$L/base,upperdir=$L/upper,workdir=$L/work $L/root
+for d in proc sys dev; do mount --bind /$d $L/root/$d; done
+# The casper hook writes a random UUID (uuidgen -r); casper only accepts a medium whose
+# .disk/casper-uuid-generic matches it, so run after casper and pin the ISO's UUID.
+cat > $L/root/etc/initramfs-tools/hooks/zz-sb4edge-casper-uuid <<HOOK
+#!/bin/sh
+PREREQ="casper"
+prereqs() { echo "\$PREREQ"; }
+case "\$1" in prereqs) prereqs; exit 0 ;; esac
+mkdir -p "\$DESTDIR/conf/conf.d"
+echo "$(cat $SRC/.disk/casper-uuid-generic)" > "\$DESTDIR/conf/uuid.conf"
+echo 'ROOT=""' > "\$DESTDIR/conf/conf.d/default_root"
+HOOK
+chmod +x $L/root/etc/initramfs-tools/hooks/zz-sb4edge-casper-uuid
+chroot $L/root mkinitramfs -o /tmp/initrd-sb4edge $KVER
+mkdir -p /iso/chk && (cd /iso/chk && chroot $L/root unmkinitramfs /tmp/initrd-sb4edge /tmp/chk && { cat $L/root/tmp/chk/main/conf/uuid.conf $L/root/tmp/chk/conf/uuid.conf 2>/dev/null || true; }; rm -rf $L/root/tmp/chk)
+echo "expected uuid: $(cat $SRC/.disk/casper-uuid-generic)"
+cp $L/root/tmp/initrd-sb4edge $SRC/casper/initrd-sb4edge
+for d in proc sys dev; do umount $L/root/$d; done
+umount $L/root $L/live $L/std $L/base
+rm -rf $L
+mv /iso/vmlinuz-sb4edge $SRC/casper/vmlinuz-sb4edge
+ls -la $SRC/casper/*sb4edge*
+
 log "merge dpkg status into upper layers"
 for f in $SRC/casper/minimal.*.squashfs; do
-    [ "$(basename $f)" = minimal.standard.squashfs ] && continue
+    case "$(basename $f)" in minimal.standard.squashfs|minimal.standard.live.squashfs) continue;; esac
     d=/iso/layer; rm -rf $d; unsquashfs -no-progress -d $d $f >/dev/null
     if [ -f $d/var/lib/dpkg/status ]; then
         python3 /work/dpkgstatus.py merge $d/var/lib/dpkg/status /iso/changed.json /iso/status.before
@@ -470,7 +559,6 @@ log "build iso"
 # -partition_offset 16 (stock uses 0): partition 1 then holds a mountable iso9660 copy of the filesystem, so
 # casper mounts /dev/sdX1 instead of the whole disk, and the other partitions (e.g. "writable" for
 # persistence) stay mountable. With offset 0, the whole-disk mount claims the disk and persistence fails.
-dd if=$ORIG of=/iso/efi-orig.img bs=512 skip=8101888 count=12288 status=none
 # EFI partition: our own GRUB (refind/build-grub.sh, silent early config; Ubuntu's signed ISO GRUB prints
 # "error: file '/boot/' not found.") is the boot program, with the live grub.cfg (menu hidden, Esc shows it).
 # rEFInd lives only on the internal disk (installed system). Secure Boot is off, so GRUB needs no signing. 16 MiB FAT.
@@ -485,7 +573,7 @@ mcopy -i /iso/efi.img $RF/grubaa64-live.efi ::EFI/boot/sb4live.efi
 mdir -/ -i /iso/efi.img ::EFI/boot | grep -cE "bootaa64|sb4live" | grep -qx 2 || { echo "EFI image incomplete"; exit 1; }
 mkdir -p /work/out
 rm -f "$OUT"
-xorriso -as mkisofs -r -V "Ubuntu 26.04.1 LTS arm64" -o "$OUT" \
+xorriso -as mkisofs -r -V "Ubuntu 27.04 arm64" -o "$OUT" \
   --protective-msdos-label -partition_cyl_align off -partition_offset 16 --mbr-force-bootable \
   -append_partition 2 28732ac11ff8d211ba4b00a0c93ec93b /iso/efi.img -appended_part_as_gpt \
   -c /boot/boot.cat -e --interval:appended_partition_2:all:: -no-emul-boot \

@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Guide for AI coding agents (and people) working on this repository: Linux for the Samsung Galaxy Book4 Edge 16"
-(Snapdragon X Elite X1E-84-100), packaged as a remastered Ubuntu 26.04.1 arm64 ISO.
+(Snapdragon X Elite X1E-84-100), packaged as a remastered Ubuntu 27.04 arm64 ISO (built from Ubuntu 26.10's ISO, every layer upgraded to 27.04).
 
 Start here:
 
@@ -22,7 +22,8 @@ A single-file version of all of this plus every text source is attached to each 
 | `scripts-build-dtbo.sh`, `dtbo/` | Out-of-tree modules and test DT overlays |
 | `extra/` | Out-of-tree drivers (EC battery/keyboard, USB-C), rebuilt packages (libcamera, libfprint) |
 | `build-*.sh`, `patches/<pkg>/` | Rebuilt Ubuntu packages (cryptsetup, Resources), libssc, fastrpc |
-| `overlay/` | Files installed into the image (audio, sensors, backlight, fingerprint, GRUB, udev, services) |
+| `build-gnome.sh`, `patches/gnome-*` | GNOME Settings + settings daemon with the automatic brightness modes and fingerprint relabelling |
+| `overlay/` | Files installed into the image (audio, sensors, backlight, fingerprint, GRUB, udev, sleep, GNOME rebuild hook, services) |
 | `remaster.sh` | Builds the ISO from Ubuntu's: installs everything above, sanity-checks the DTB, writes the ISO |
 | `refind/` | Boot menu (rEFInd config, theme, GRUB build), `refind/mockup` = design drafts |
 | `windows/`, `windows-files/`, `fw/`, `sensors/qcom-root` | Windows-derived firmware/config (third-party, not GPL) |
@@ -34,7 +35,10 @@ A single-file version of all of this plus every text source is attached to each 
 ## Building and testing
 
 - `./build.sh` (all) or `./build.sh <step>`; needs an arm64 Docker host and ~60 GB. Long steps: run detached.
-- `remaster.sh` is read by bash while it runs: never edit it during a build.
+- `remaster.sh` and `build.sh` are read by bash while they run: never edit them during a build.
+- The `sb4build` image is Ubuntu 27.04 (from ubuntu:26.10, suites switched to tenacious on ports.ubuntu.com).
+  The kernel and its modules (`kernel`, `modules`) are built in `sb4build:kernel` (`docker/kernel`, Ubuntu 26.04): the kernel tree's host tools
+  (sign-file) link libcrypto.so.3.
 - QEMU (`test/qemu-test.sh`, `test/vm/run.sh install|boot`) checks boot and the dual-boot install; it cannot test
   BitLocker, the EC, audio, sensors or the fingerprint reader - those need the laptop.
 - `remaster.sh` fails the build if the DTB lacks expected nodes (retimers, keyboard, battery, camera, SD card) or

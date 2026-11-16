@@ -72,7 +72,7 @@
 
 #define B1ST_DISCHARGE		BIT(0)
 #define B1ST_CHARGE		BIT(1)
-#define B1ST_FULL		BIT(3)
+#define B1ST_LIMIT		BIT(3)	/* ACPI _BST: charge limiting */
 
 #define FLAG_B1EX		BIT(0)
 #define FLAG_ACEX		BIT(2)
@@ -377,12 +377,18 @@ static void sgb_poll_work(struct work_struct *w)
 	b->charge_full        = (int)(fullchg_c ? fullchg_c : design_c) * 1000;
 	b->charge_full_design = (int)design_c  * 1000;
 
-	if (b1st & B1ST_FULL)
-		b->status = POWER_SUPPLY_STATUS_FULL;
+	/*
+	 * sb4edge: bit 3 is the ACPI _BST "charge limiting" bit, not "full". The EC sets it whenever the
+	 * charge limit (Preserve battery health) is on, even while discharging at 24 %, so the real
+	 * direction bits win and bit 3 alone means "plugged in, held at the limit".
+	 */
+	if (b1st & B1ST_DISCHARGE)
+		b->status = POWER_SUPPLY_STATUS_DISCHARGING;
 	else if (b1st & B1ST_CHARGE)
 		b->status = POWER_SUPPLY_STATUS_CHARGING;
-	else if (b1st & B1ST_DISCHARGE)
-		b->status = POWER_SUPPLY_STATUS_DISCHARGING;
+	else if (b1st & B1ST_LIMIT)
+		b->status = b->ac_online ? POWER_SUPPLY_STATUS_NOT_CHARGING :
+					   POWER_SUPPLY_STATUS_DISCHARGING;
 	else if (b->ac_online && fullchg_c &&
 		 remaining >= (fullchg_c * 95 / 100))
 		b->status = POWER_SUPPLY_STATUS_FULL;

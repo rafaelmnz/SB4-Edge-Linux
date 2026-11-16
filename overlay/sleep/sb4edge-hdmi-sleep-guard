@@ -1,0 +1,18 @@
+#!/bin/sh
+# Block suspend while an external monitor (HDMI or USB-C DisplayPort) is connected. After s2idle the msm DisplayPort driver cannot reach the
+# RTD2171 DP-to-HDMI bridge again: every connector probe times out and GNOME's display thread stays blocked for
+# minutes (black screen, frozen desktop). Without a monitor on HDMI the laptop suspends normally.
+hold=
+check() {
+	if grep -qx connected /sys/class/drm/card*-HDMI-A-*/status /sys/class/drm/card*-DP-*/status 2>/dev/null; then
+		[ -n "$hold" ] && kill -0 "$hold" 2>/dev/null && return
+		systemd-inhibit --what=sleep --mode=block --who="sb4edge" \
+			--why="external monitor connected (HDMI/USB-C display does not survive suspend yet)" sleep infinity &
+		hold=$!; echo "HDMI connected: suspend blocked"
+	elif [ -n "$hold" ]; then
+		kill "$hold" 2>/dev/null; wait "$hold" 2>/dev/null; hold=; echo "HDMI disconnected: suspend allowed"
+	fi
+}
+trap '[ -n "$hold" ] && kill "$hold"; exit 0' TERM INT
+check
+udevadm monitor --udev --subsystem-match=drm | while read -r _; do check; done

@@ -1,0 +1,2 @@
+// After dpkg runs, rebuild patched GNOME packages (sb4edge-gnome-rebuild) if a stock version was just installed.
+DPkg::Post-Invoke { "for p in gnome-control-center gnome-settings-daemon; do [ -x /usr/lib/sb4edge/sb4edge-gnome-rebuild ] && [ -d /usr/share/sb4edge/patches/$p ] && dpkg-query -W -f='${Version}' $p 2>/dev/null | grep -qv '+sb4edge' && systemctl start --no-block sb4edge-gnome-rebuild@$p.service; done; true"; };

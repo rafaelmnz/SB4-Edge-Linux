@@ -1,6 +1,6 @@
 # Samsung Galaxy Book4 Edge 16" on Linux: knowledge base
 
-Distilled, distribution-independent facts from building SB4-Edge-Linux (Ubuntu 26.04.1, kernel 7.4-rc3). Written
+Distilled, distribution-independent facts from building SB4-Edge-Linux (Ubuntu 27.04 (26.04.1 before), kernel 7.4-rc3). Written
 for people and AI agents who want to reproduce, verify or redo this work in another way (another distribution,
 upstream patches, a different userspace). Each section: **hardware**, **what was wrong**, **the fix used here**,
 **how it was verified**, **open points / alternatives**. File paths refer to this repository. The chronological log
@@ -61,7 +61,10 @@ implemented but not tested on hardware; **[open]** not solved.
 - Battery: EC driver from Saddytech (modified). Bug fixed: design/full capacity words were swapped ("stuck at
   82%" was really 82% health) [verified]. `qcom_battmgr` must not load (blacklist, also in the initramfs).
 - Charge limit: `charge_control_end_threshold` 1-100 via mailbox 0xE9 (100 = off, written as 0). UPower accepts
-  end-only, so GNOME "Preserve battery health" drives it [verified read; set path implemented].
+  end-only, so GNOME "Preserve battery health" drives it [verified].
+- Status: EC B1ST bit 3 is the ACPI _BST "charge limiting" bit. At the limit the EC sets it without the
+  charge/discharge bits; the driver used to report "Charging" (GNOME showed the charging icon with Preserve battery
+  health on). Fix: discharge/charge bits first, then bit 3 = "Not charging" on AC (else "Discharging") [verified].
 - Charging hardware: two **S2MM006** PD controllers (Samsung PDIC) at 0x33 on two I2C buses; **ISL9241** charger
   (0x09) and SBS gauge (0x0b) on i2c20. The PD controller waits for the host to close the **charger input switch**
   (cmd 0x12) after attach, as Windows EmuEc.sys does; without it a charger plugged after boot is ignored.
@@ -156,10 +159,20 @@ implemented but not tested on hardware; **[open]** not solved.
   ADSP crashes and **TrustZone resets the whole laptop**. Use Qualcomm's `adsprpcd sensorspd adsp` (full apps_std).
   Config from the Windows driver package (`sensors/qcom-root`), CRLF stripped, config mtimes set to 1719256666.
   Must start at boot, before the sensor drivers probe.
+- Location: **centre of the top bezel** (a torch there reads 250-320 lux against 6-9 lux room light) [verified
+  2026-11-16].
 - SSC data type is **"color"** (not "ambient_light" or "rgb"). Event floats: lux, CCT, x, y, raw.
 - Userspace: libssc 0.4.4 (patched data-type override) + iio-sensor-proxy 3.9 (first with SSC). GNOME auto
   brightness works. Keyboard rule (Samsung's): light off above 100 lux, on below 50 lux, 3 s debounce.
   gsd-power bug: after an iio-sensor-proxy restart it never re-claims the sensor until re-login.
+- Stock GNOME auto brightness: gsd sets the light at the last slider change as 2/3 of full scale and scales
+  linearly with lux, unbounded (6 -> 25 lux took the screen from 16 % to 93 %). gnome-shell applies
+  `target + slider - 50 %`. Patches here (`patches/gnome-settings-daemon`, `patches/gnome-control-center`) add
+  `ambient-mode` to `org.gnome.settings-daemon.plugins.power`: **adjust** (default; at most +-`ambient-adjust-range`
+  = 25 % around the slider, limit reached at 8x brighter/darker, log scale) and **curve** (fixed log lux ->
+  brightness curve 1:8, 5:20, 20:35, 80:50, 300:65, 1000:80, 5000:100 %). Settings -> Power shows "Brightness
+  Adjustment" (Around the Slider / Follow Room Light) under Automatic Screen Brightness [verified: slider 47 %,
+  25 lux -> 963 vs 705 raw]. Proposed upstream to GNOME.
 
 ## Fingerprint reader
 
@@ -179,16 +192,28 @@ implemented but not tested on hardware; **[open]** not solved.
   fprintd prints of the Linux user (boot service + pam_exec at login; single-user systems only) [verified: unlock in
   Linux, Windows Hello still works, both ways after reboots].
 - Rest the finger; pressing is a power-button press.
+- Windows Hello names prints 1, 2, 3, not by finger, so imported prints get a guessed finger. Relabel with
+  `sb4edge-fingerprint-import --rename FROM TO USER` or the pencil button per print in Settings -> Users ->
+  Fingerprint (GNOME Settings patch; polkit action `org.sb4edge.fingerprint-rename`, admin) [verified].
+- Power: USB autosuspend for the reader (udev, 2 s delay) saves about 0.5 W at idle with no extra unlock delay
+  [verified: 3.3-3.6 W vs 4.0-4.4 W, battery, screen at 30 %].
 
 ## Boot
 
 - Live ISO: Ubuntu's ISO remastered (`remaster.sh`): own GRUB (`refind/build-grub.sh`, silent) as the ESP boot
   program; casper; ISO9660 partition offset 16 so the ISO partition is mountable (persistence).
 - Installed: **rEFInd** on the internal ESP, kept first in BootOrder by a service; GRUB hidden; Windows tile points at
-  `\EFI\Microsoft\Boot\bootmgfw.efi`. Never leave a `vmlinuz-*` copy in /boot during kernel installs (update-grub
+  `\EFI\Microsoft\Boot\bootmgfw.efi`. rEFInd starts on the last OS booted (no `default_selection`; `use_nvram false`
+  keeps that in `EFI/refind/vars` on the ESP); `default_selection Ubuntu` had made it always pick Ubuntu. Never leave a `vmlinuz-*` copy in /boot during kernel installs (update-grub
   picks it up as the default).
 - Installer: "Install alongside Windows" works once C: is shrunk in Windows (the installer cannot resize BitLocker).
   A leftover `/cdrom` directory in the squashfs crashed the installer (configure_apt) - remove it after remastering.
+- Kernel parameters `clk_ignore_unused pd_ignore_unused` are required: without them xhci-hcd.4.auto fails to probe
+  (-110) and idle power does not improve (5.12 vs 4.99 W) [verified]. `mem_sleep_default=s2idle` (deep is not
+  offered). `sb4edge-hdmi-sleep-guard` keeps the laptop from suspending with an HDMI adapter attached, since
+  unplugging it during/after sleep crashed the machine.
+- Ubuntu 27.04 has no arm64 desktop ISO yet: the image is Ubuntu 26.10's ISO with every squashfs layer
+  dist-upgraded to 27.04 (ports.ubuntu.com) in `remaster.sh`.
 
 ## Windows partitions from Linux
 
@@ -204,7 +229,8 @@ implemented but not tested on hardware; **[open]** not solved.
 4. Fan tachometer; whether EC mode 0xEE changes the fan by itself.
 5. A safe way to give fingerprints to multiple Linux users (map Windows Hello prints to accounts, e.g. by reading
    the Windows WinBio database).
-6. 14" and 15.6" models: most of this applies; DT differences (USB-A port uses eusb6 on the 16").
+6. GNOME: upstream the automatic brightness modes; gsd re-claiming the light sensor after iio-sensor-proxy restarts.
+7. 14" and 15.6" models: most of this applies; DT differences (USB-A port uses eusb6 on the 16").
 
 ## Sources and prior work
 

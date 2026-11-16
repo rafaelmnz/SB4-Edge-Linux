@@ -1,0 +1,48 @@
+#!/bin/sh
+# Rebuild a GNOME source package with the sb4edge patches, for the version apt has installed:
+#   sb4edge-gnome-rebuild gnome-control-center     (fingerprint rename, automatic-brightness mode row)
+#   sb4edge-gnome-rebuild gnome-settings-daemon    (automatic-brightness modes)
+# Patches: /usr/share/sb4edge/patches/<source package>/*.patch. Run by sb4edge-gnome-rebuild@<package>.service,
+# which the apt hook starts whenever a stock version gets installed (rolling release: every GNOME update). If a
+# patch no longer applies or the build fails, the stock package stays (log: journalctl -u sb4edge-gnome-rebuild@*).
+set -eu
+SRC=${1:?source package}
+PATCHES=/usr/share/sb4edge/patches/$SRC
+WORK=/var/lib/sb4edge/rebuild/$SRC
+V=$(dpkg-query -W -f='${Version}' "$SRC" 2>/dev/null) || exit 0
+ls "$PATCHES"/*.patch >/dev/null 2>&1 || { echo "no patches for $SRC"; exit 0; }
+BASE=${V%%+sb4edge*}
+N=$(echo "$V" | sed -n 's/.*+sb4edge\([0-9]*\)$/\1/p')
+STAMP=$(cat "$PATCHES"/*.patch | sha256sum | cut -c1-16)
+if [ "$V" != "$BASE" ] && [ "$(cat "$WORK.stamp" 2>/dev/null)" = "$STAMP" ]; then
+    echo "$SRC $V already has these patches"; exit 0
+fi
+
+# The apt hook starts us while apt still holds the lock: wait for it.
+while fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock >/dev/null 2>&1; do sleep 5; done
+
+# Source packages: enable deb-src for the Ubuntu archive if it is not on yet.
+grep -q "^Types:.*deb-src" /etc/apt/sources.list.d/ubuntu.sources || sed -i "s/^Types: deb$/Types: deb deb-src/" /etc/apt/sources.list.d/ubuntu.sources
+
+echo "rebuilding $SRC $BASE with: $(cd "$PATCHES" && echo *.patch)"
+rm -rf "$WORK" "$WORK.stamp" && mkdir -p "$WORK" && cd "$WORK"
+apt-get update -q
+DEBIAN_FRONTEND=noninteractive apt-get build-dep -y -q "$SRC=$BASE"
+apt-get source -q "$SRC=$BASE"
+cd "$SRC"-*/
+for p in "$PATCHES"/*.patch; do
+    cp "$p" debian/patches/
+    basename "$p" >> debian/patches/series
+done
+QUILT_PATCHES=debian/patches quilt push -a -q
+DEBEMAIL=sb4edge@localhost DEBFULLNAME=SB4-Edge-Linux dch -v "$BASE+sb4edge$(( ${N:-0} + 1 ))" "sb4edge patches: $(cd "$PATCHES" && echo *.patch)"
+DEB_BUILD_OPTIONS="nocheck parallel=$(nproc)" dpkg-buildpackage -b -us -uc -j"$(nproc)"
+cd "$WORK"
+pkgs=""
+for deb in ./*+sb4edge*.deb; do
+    name=$(dpkg-deb -f "$deb" Package)
+    dpkg-query -W -f='${Status}' "$name" 2>/dev/null | grep -q "ok installed" && pkgs="$pkgs $deb"
+done
+DEBIAN_FRONTEND=noninteractive apt-get install -y -q $pkgs
+echo "$STAMP" > "$WORK.stamp"
+echo "installed:$pkgs"

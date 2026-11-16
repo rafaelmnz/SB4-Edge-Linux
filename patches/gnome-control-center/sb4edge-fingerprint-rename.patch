@@ -1,0 +1,113 @@
+Description: Fingerprint dialog: change which finger a fingerprint is labelled as
+ Prints enrolled in Windows Hello are numbered (1, 2, 3), not named, so when
+ sb4edge-fingerprint-import gives them to Linux it has to guess the finger.
+ Adds an edit button to each enrolled fingerprint row; picking a free finger
+ runs "pkexec sb4edge-fingerprint-import --rename FROM TO USER", which only
+ changes fprintd's stored label (the print on the sensor stays). The button
+ only appears when the helper is installed.
+Author: SB4-Edge-Linux
+Forwarded: not-needed
+---
+--- a/panels/system/users/cc-fingerprint-dialog.c
++++ b/panels/system/users/cc-fingerprint-dialog.c
+@@ -369,9 +369,90 @@
+ 
+     cc_fprintd_device_call_delete_enrolled_finger (self->device, finger_id, G_DBUS_CALL_FLAGS_NONE, -1,
+                                                    self->cancellable, on_fingerprint_deleted_cb, self);
++}
++
++/* sb4edge: relabel a print (fingerprints imported from Windows Hello are numbered, not named, so the import has to
++ * guess the finger). Only fprintd's stored label changes; the print on the sensor stays. Needs the sb4edge helper. */
++#define SB4EDGE_FINGERPRINT_HELPER "/usr/sbin/sb4edge-fingerprint-import"
++
++static void
++on_fingerprint_renamed_cb (GObject *object, GAsyncResult *res, gpointer user_data)
++{
++    g_autoptr(CcFingerprintDialog) self = CC_FINGERPRINT_DIALOG (user_data);
++    g_autoptr(GError) error = NULL;
++
++    if (!g_subprocess_wait_check_finish (G_SUBPROCESS (object), res, &error))
++        g_warning ("Relabelling the fingerprint failed: %s", error->message);   /* includes a cancelled password */
++
++    if (self->device)
++        update_prints_store (self);
++}
++
++static void
++rename_fingerprint (GtkButton *button, gpointer user_data)
++{
++    CcFingerprintDialog *self = CC_FINGERPRINT_DIALOG (user_data);
++    const gchar *from = g_object_get_data (G_OBJECT (button), "finger-id");
++    const gchar *to = g_object_get_data (G_OBJECT (button), "new-finger-id");
++    ActUser *user = cc_fingerprint_manager_get_user (self->manager);
++    g_autoptr(GSubprocess) proc = NULL;
++    g_autoptr(GError) error = NULL;
++
++    gtk_popover_popdown (GTK_POPOVER (gtk_widget_get_ancestor (GTK_WIDGET (button), GTK_TYPE_POPOVER)));
++    stop_identification (self);
++
++    proc = g_subprocess_new (G_SUBPROCESS_FLAGS_NONE, &error, "pkexec", SB4EDGE_FINGERPRINT_HELPER, "--rename",
++                             from, to, act_user_get_user_name (user), NULL);
++    if (!proc) {
++        g_warning ("Could not run %s: %s", SB4EDGE_FINGERPRINT_HELPER, error->message);
++        update_prints_store (self);
++        return;
++    }
++    g_subprocess_wait_check_async (proc, self->cancellable, on_fingerprint_renamed_cb, g_object_ref (self));
++}
++
++static void
++add_rename_choices (CcFingerprintDialog *self, GtkBox *box, const char *from, const char **ids, gsize n)
++{
++    for (gsize i = 0; i < n; i++) {
++        GtkWidget *choice;
++
++        if (self->enrolled_fingers && g_strv_contains ((const gchar **) self->enrolled_fingers, ids[i]))
++            continue;
++        choice = gtk_button_new_with_mnemonic (get_finger_name (ids[i]));
++        gtk_widget_add_css_class (choice, "flat");
++        gtk_label_set_xalign (GTK_LABEL (gtk_button_get_child (GTK_BUTTON (choice))), 0.0);
++        g_object_set_data_full (G_OBJECT (choice), "finger-id", g_strdup (from), g_free);
++        g_object_set_data_full (G_OBJECT (choice), "new-finger-id", g_strdup (ids[i]), g_free);
++        g_signal_connect (choice, "clicked", G_CALLBACK (rename_fingerprint), self);
++        gtk_box_append (box, choice);
++    }
+ }
+ 
+ static GtkWidget *
++create_rename_button (CcFingerprintDialog *self, const char *finger_id)
++{
++    GtkWidget *button = gtk_menu_button_new ();
++    GtkWidget *popover = gtk_popover_new ();
++    GtkWidget *box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
++    GtkWidget *title = gtk_label_new (_("This fingerprint is"));
++
++    gtk_widget_add_css_class (title, "heading");
++    gtk_widget_set_margin_bottom (title, 6);
++    gtk_box_append (GTK_BOX (box), title);
++    add_rename_choices (self, GTK_BOX (box), finger_id, RIGHT_HAND_FINGER_IDS, G_N_ELEMENTS (RIGHT_HAND_FINGER_IDS));
++    add_rename_choices (self, GTK_BOX (box), finger_id, LEFT_HAND_FINGER_IDS, G_N_ELEMENTS (LEFT_HAND_FINGER_IDS));
++    gtk_popover_set_child (GTK_POPOVER (popover), box);
++
++    gtk_menu_button_set_popover (GTK_MENU_BUTTON (button), popover);
++    gtk_menu_button_set_icon_name (GTK_MENU_BUTTON (button), "document-edit-symbolic");
++    gtk_widget_set_tooltip_text (button, _("Change which finger this is"));
++    gtk_widget_add_css_class (button, "flat");
++    gtk_widget_set_valign (button, GTK_ALIGN_CENTER);
++    return button;
++}
++
++static GtkWidget *
+ create_fingerprint_row (GObject *item, gpointer user_data)
+ {
+     GtkStringObject *fingerprint = GTK_STRING_OBJECT (item);
+@@ -398,6 +479,9 @@
+     gtk_button_set_icon_name (GTK_BUTTON (delete_button), "edit-delete-symbolic");
+     gtk_widget_add_css_class (delete_button, "flat");
+     gtk_widget_set_valign (delete_button, GTK_ALIGN_CENTER);
++    if (g_file_test (SB4EDGE_FINGERPRINT_HELPER, G_FILE_TEST_IS_EXECUTABLE))
++        adw_action_row_add_suffix (ADW_ACTION_ROW (row),
++                                   create_rename_button (CC_FINGERPRINT_DIALOG (user_data), finger_id));
+     adw_action_row_add_suffix (ADW_ACTION_ROW (row), delete_button);
+ 
+     return row;

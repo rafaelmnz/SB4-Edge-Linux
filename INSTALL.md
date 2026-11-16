@@ -1,6 +1,6 @@
 # Installing SB4-Edge-Linux next to Windows
 
-This installs Ubuntu 26.04.1 (SB4-Edge-Linux) on the internal disk of the Samsung Galaxy Book4 Edge 16", next to
+This installs Ubuntu 27.04 (SB4-Edge-Linux) on the internal disk of the Samsung Galaxy Book4 Edge 16", next to
 Windows 11. Windows keeps working; a boot menu (rEFInd) lets you choose Ubuntu or Windows at every start.
 
 **The Ubuntu installer cannot resize a BitLocker-encrypted Windows partition**, and on this laptop C: is always
@@ -51,15 +51,15 @@ Download the three `.part` files and `SHA256SUMS` from the
 macOS / Linux (Terminal, in that folder):
 
 ```sh
-cat ubuntu-26.04.1-sb4edge-desktop-arm64.iso.part* > ubuntu-26.04.1-sb4edge-desktop-arm64.iso
+cat ubuntu-27.04-sb4edge-desktop-arm64.iso.part* > ubuntu-27.04-sb4edge-desktop-arm64.iso
 shasum -a 256 -c SHA256SUMS          # Linux: sha256sum -c SHA256SUMS   -> must say OK
 ```
 
 Windows (Command Prompt, in that folder):
 
 ```bat
-copy /b ubuntu-26.04.1-sb4edge-desktop-arm64.iso.part1 + ubuntu-26.04.1-sb4edge-desktop-arm64.iso.part2 + ubuntu-26.04.1-sb4edge-desktop-arm64.iso.part3 ubuntu-26.04.1-sb4edge-desktop-arm64.iso
-certutil -hashfile ubuntu-26.04.1-sb4edge-desktop-arm64.iso SHA256
+copy /b ubuntu-27.04-sb4edge-desktop-arm64.iso.part1 + ubuntu-27.04-sb4edge-desktop-arm64.iso.part2 + ubuntu-27.04-sb4edge-desktop-arm64.iso.part3 ubuntu-27.04-sb4edge-desktop-arm64.iso
+certutil -hashfile ubuntu-27.04-sb4edge-desktop-arm64.iso SHA256
 ```
 
 (compare the result with the hash in `SHA256SUMS`).
@@ -69,7 +69,7 @@ Write the ISO to the USB drive:
 - **balenaEtcher** (Windows, macOS, Linux): *Flash from file* → the ISO → the USB drive → *Flash*; or
 - **Rufus** (Windows): select the ISO, and when asked, choose **Write in DD Image mode**; or
 - macOS: `diskutil list` to find the USB disk (e.g. `disk4`, check the size!), then
-  `diskutil unmountDisk /dev/disk4 && sudo dd if=ubuntu-26.04.1-sb4edge-desktop-arm64.iso of=/dev/rdisk4 bs=4m`.
+  `diskutil unmountDisk /dev/disk4 && sudo dd if=ubuntu-27.04-sb4edge-desktop-arm64.iso of=/dev/rdisk4 bs=4m`.
 
 ## 4. In the BIOS: turn Secure Boot off
 
@@ -126,6 +126,9 @@ off).
   - The automatic pick-up only runs while Ubuntu has a single user account (so a finger someone enrolled in their
     own Windows account cannot unlock yours). With several accounts, import by hand after enrolling one finger in
     Windows: `sudo sb4edge-fingerprint-import <user> right-index` (`--list` shows what is on the sensor).
+  - Windows Hello numbers prints (1, 2, 3) without saying which finger, so the automatic pick-up labels them in
+    order: right index, left index, right middle, and so on. If the label is wrong, fix it (only the label
+    changes): `sudo sb4edge-fingerprint-import --rename right-index left-index`.
 - **Windows files**: the Windows partition shows up in Files. If it is locked, click it and type the BitLocker
   recovery key once.
 - **Updates**: use Software Updater / `sudo apt upgrade` as usual. A few packages (kernel, libcamera, libfprint,

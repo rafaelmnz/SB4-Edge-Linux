@@ -1,0 +1,134 @@
+Description: Power panel: choose how automatic brightness works
+ Adds a "Brightness Adjustment" row under Automatic Screen Brightness:
+ "Around the Slider" or "Follow Room Light" (gnome-settings-daemon key
+ ambient-mode, from the sb4edge gnome-settings-daemon patch). The row only
+ appears when the installed gnome-settings-daemon has that key.
+Author: SB4-Edge-Linux
+Forwarded: not-needed
+---
+--- a/panels/power/cc-power-panel.blp	2026-11-16 10:15:35
++++ b/panels/power/cc-power-panel.blp	2026-11-16 10:16:12
+@@ -184,6 +184,17 @@
+                 notify::visible => $power_saving_group_visibility_cb(template);
+               }
+ 
++              Adw.ComboRow als_mode_row {
++                visible: false;
++                title: _("Brightness Adjustment");
++                model: StringList {
++                  strings [
++                    _("Around the Slider"),
++                    _("Follow Room Light"),
++                  ]
++                };
++              }
++
+               Adw.SwitchRow dim_screen_row {
+                 title: _("_Dim Screen");
+                 subtitle: _("Reduce screen brightness when the device is inactive");
+--- a/panels/power/cc-power-panel.c	2026-11-16 10:15:35
++++ b/panels/power/cc-power-panel.c	2026-11-16 10:16:12
+@@ -57,6 +57,7 @@
+     AdwViewStackPage *power_saving_stack_page;
+ 
+     AdwSwitchRow *als_row;
++    AdwComboRow *als_mode_row;
+     AdwPreferencesGroup *battery_charging_section;
+     GtkListBox *battery_listbox;
+     AdwSwitchRow *battery_percentage_row;
+@@ -361,6 +362,62 @@
+     g_ptr_array_add (self->devices, g_object_ref (device));
+     g_signal_connect_object (G_OBJECT (device), "notify", G_CALLBACK (up_client_changed), self, G_CONNECT_SWAPPED);
+     up_client_changed (self);
++}
++
++/* sb4edge: how the light sensor sets the brightness (gnome-settings-daemon "ambient-mode"; the row only shows when
++ * the installed gnome-settings-daemon has the key). */
++static const char *als_modes[] = { "adjust", "curve" };
++
++static gboolean
++als_mode_supported (CcPowerPanel *self)
++{
++    g_autoptr(GSettingsSchema) schema = NULL;
++
++    g_object_get (self->gsd_settings, "settings-schema", &schema, NULL);
++    return schema && g_settings_schema_has_key (schema, "ambient-mode");
++}
++
++static void
++als_mode_update_subtitle (CcPowerPanel *self)
++{
++    if (adw_combo_row_get_selected (self->als_mode_row) == 1)
++        adw_action_row_set_subtitle (ADW_ACTION_ROW (self->als_mode_row),
++                                     _("Room light sets the brightness; the slider shifts it up or down"));
++    else {
++        g_autofree char *subtitle = g_strdup_printf (_("Room light moves the brightness up to %d%% above or below the slider"),
++                                                     g_settings_get_int (self->gsd_settings, "ambient-adjust-range"));
++        adw_action_row_set_subtitle (ADW_ACTION_ROW (self->als_mode_row), subtitle);
++    }
++}
++
++static void
++als_mode_row_changed_cb (CcPowerPanel *self)
++{
++    guint selected = adw_combo_row_get_selected (self->als_mode_row);
++
++    if (selected < G_N_ELEMENTS (als_modes))
++        g_settings_set_string (self->gsd_settings, "ambient-mode", als_modes[selected]);
++    als_mode_update_subtitle (self);
++}
++
++static void
++als_mode_sync (CcPowerPanel *self)
++{
++    g_autofree char *mode = NULL;
++
++    if (!als_mode_supported (self)) {
++        gtk_widget_set_visible (GTK_WIDGET (self->als_mode_row), FALSE);
++        return;
++    }
++    mode = g_settings_get_string (self->gsd_settings, "ambient-mode");
++    g_signal_handlers_block_by_func (self->als_mode_row, als_mode_row_changed_cb, self);
++    adw_combo_row_set_selected (self->als_mode_row, g_strcmp0 (mode, "curve") == 0 ? 1 : 0);
++    g_signal_handlers_unblock_by_func (self->als_mode_row, als_mode_row_changed_cb, self);
++    als_mode_update_subtitle (self);
++    gtk_widget_set_visible (GTK_WIDGET (self->als_mode_row),
++                            gtk_widget_get_visible (GTK_WIDGET (self->als_row)));
++    gtk_widget_set_sensitive (GTK_WIDGET (self->als_mode_row),
++                              g_settings_get_boolean (self->gsd_settings, "ambient-enabled"));
+ }
+ 
+ static void
+@@ -393,6 +450,7 @@
+     adw_switch_row_set_active (self->als_row, enabled);
+     gtk_widget_set_visible (GTK_WIDGET (self->als_row), visible && self->has_brightness_control);
+     g_signal_handlers_unblock_by_func (self->als_row, als_row_changed_cb, self);
++    als_mode_sync (self);
+ }
+ 
+ static gboolean
+@@ -427,6 +485,7 @@
+ static void
+ als_enabled_setting_changed (CcPowerPanel *self)
+ {
++    als_mode_sync (self);
+     als_enabled_state_changed (self);
+ }
+ 
+@@ -694,6 +753,8 @@
+                           iio_proxy_appeared_cb, iio_proxy_vanished_cb, self, NULL);
+     g_signal_connect_object (self->gsd_settings, "changed", G_CALLBACK (als_enabled_setting_changed), self,
+                              G_CONNECT_SWAPPED);
++    g_signal_connect_object (self->als_mode_row, "notify::selected", G_CALLBACK (als_mode_row_changed_cb), self,
++                             G_CONNECT_SWAPPED);
+ 
+     self->shell_brightness_proxy = cc_object_storage_create_dbus_proxy_sync (
+         G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_DO_NOT_CONNECT_SIGNALS | G_DBUS_PROXY_FLAGS_DO_NOT_AUTO_START,
+@@ -1160,6 +1221,7 @@
+     g_type_ensure (CC_TYPE_POWER_PROFILE_INFO_ROW);
+ 
+     gtk_widget_class_bind_template_child (widget_class, CcPowerPanel, als_row);
++    gtk_widget_class_bind_template_child (widget_class, CcPowerPanel, als_mode_row);
+     gtk_widget_class_bind_template_child (widget_class, CcPowerPanel, battery_charging_section);
+     gtk_widget_class_bind_template_child (widget_class, CcPowerPanel, battery_listbox);
+     gtk_widget_class_bind_template_child (widget_class, CcPowerPanel, battery_percentage_row);

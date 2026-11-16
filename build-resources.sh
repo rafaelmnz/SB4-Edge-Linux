@@ -16,7 +16,7 @@ for p in /work/patches/resources/*.patch; do
   n=sb4edge-$(basename "$p"); cp "$p" debian/patches/$n; echo "$n" >> debian/patches/series
 done
 QUILT_PATCHES=debian/patches quilt push -a -q >/dev/null
-test -f src/utils/gpu/msm.rs
+test -f src/devices/gpu/msm.rs
 DEBFULLNAME=sb4edge DEBEMAIL=sb4edge@localhost dch -l +sb4edge "GPU page for Qualcomm Adreno (msm) GPUs."
 DEB_BUILD_OPTIONS="nocheck nodoc parallel=$(nproc)" dpkg-buildpackage -b -uc -us >/tmp/rs.log 2>&1 || { grep -E "^error|^warning: unused" -A6 /tmp/rs.log | head -60; tail -30 /tmp/rs.log; exit 1; }
 mkdir -p /work/out/resources; rm -f /work/out/resources/*.deb

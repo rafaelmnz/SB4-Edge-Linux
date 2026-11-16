@@ -553,3 +553,31 @@ Windows qcdxkm8380.sys: logging stripped; AUX diag escape at sub_140115C40 calls
 - ISO sha256 507060c869d9…6508 in apps (previous 9d544ca4 in old/), flashed to the SSD, readback verified.
 - GitHub: commit 1d20a1c; release v2026.11.15 with the ISO split in 3 parts (out/release).
 - TODO: sudo-by-finger test confirmation; reboot + Windows boot persistence of the print.
+
+## 2026-11-16: power tests, battery status, fingerprint relabel, brightness modes, Ubuntu 27.04
+
+- Boot parameters: without `clk_ignore_unused pd_ignore_unused` xhci-hcd.4.auto fails to probe (-110) and idle
+  power is not lower (5.12 W vs 4.99 W): both stay. `usbcore.autosuspend=-1` also kept.
+- Idle power on battery, screen at 30 %: fingerprint reader USB autosuspend (udev, 2 s) 3.31-3.56 W vs 3.95-4.43 W,
+  unlock unchanged -> made permanent (`overlay/63-sb4edge-usb-hub-pm.rules`). Wi-Fi PCI runtime PM: no change.
+  60 Hz vs 120 Hz: negligible. power-saver profile: inconclusive.
+- Suspend: s2idle only (`mem_sleep_default=s2idle`); `sb4edge-hdmi-sleep-guard` blocks sleep while an HDMI adapter
+  is attached (unplugging it after sleep crashed the laptop) (`overlay/sleep`).
+- Battery: with "Preserve battery health" GNOME showed the charging icon at the limit. EC B1ST bit 3 (ACPI _BST
+  "charge limiting") was read as charging; now "Not charging" on AC unless a direction bit is set.
+- Compared with ishashanknigam/Samsung-Galaxy-Book-4-Fingerprint-Ubuntu: kept this project's SDCP libfprint.
+- Fingerprint relabel: Windows Hello prints carry no finger; `sb4edge-fingerprint-import --rename FROM TO USER`
+  and a GNOME Settings patch (pencil button per print, pkexec, polkit `org.sb4edge.fingerprint-rename`).
+  The separate "Fingerprint Labels" app was dropped.
+- Light sensor location: centre of the top bezel (torch 250-320 lux vs 6-9 lux room).
+- Automatic brightness modes (gsd + Settings patches, `ambient-mode` adjust|curve, `ambient-adjust-range`):
+  slider 47 %, 25 lux: adjust 963, curve 705 (raw, max 2047). GNOME rebuilds on the installed system: an apt
+  DPkg::Post-Invoke hook starts `sb4edge-gnome-rebuild@<pkg>` when Ubuntu updates gnome-control-center or
+  gnome-settings-daemon (deb-src + quilt, version +sb4edgeN, patch-hash stamp).
+- Ubuntu 27.04 "tenacious": no arm64 daily-live ISO exists (amd64 only), so the ISO is 26.10's with each squashfs
+  layer dist-upgraded from ports.ubuntu.com. Build container = ubuntu:26.10 switched to tenacious (stonking-updates
+  and -security kept: newer zlib/bzip2 builds there). Userland rebuilt for 27.04 (cryptsetup, Resources 51.0 with
+  the msm GPU patch ported, libcamera, libfprint, libssc/iio-sensor-proxy, fastrpc, GNOME). The kernel tree's
+  sign-file needs libcrypto.so.3 (gone in 27.04): kernel and modules use the 26.04 container (`docker/kernel`).
+- rEFInd always selected Ubuntu (`default_selection Ubuntu`). Removed so it starts on the last OS booted; stored
+  in EFI/refind/vars (use_nvram false). sb4edge-refind-install copies the new refind.conf at the next boot.

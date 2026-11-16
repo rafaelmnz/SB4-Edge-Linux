@@ -1,0 +1,10 @@
+[Unit]
+Description=Block suspend while an HDMI monitor is connected (Samsung Galaxy Book4 Edge)
+After=systemd-logind.service
+
+[Service]
+ExecStart=/usr/lib/sb4edge/sb4edge-hdmi-sleep-guard
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

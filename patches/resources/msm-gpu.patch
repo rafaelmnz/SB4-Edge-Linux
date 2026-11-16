@@ -4,11 +4,11 @@ Description: GPU page for Qualcomm Adreno (msm) GPUs
  DRM fdinfo counters, clock from devfreq, temperature from the gpuss thermal zones, shared memory in use
  against MemTotal. Per-process GPU usage/memory now also covers msm clients.
 Author: sb4edge-linux
-diff --color -ruN -x . resources-orig/lib/process_data/src/lib.rs resources/lib/process_data/src/lib.rs
-diff --color -ruN -x . resources-orig/lib/process_data/src/lib.rs resources/lib/process_data/src/lib.rs
---- a/lib/process_data/src/lib.rs	2026-11-15 09:10:14
-+++ b/lib/process_data/src/lib.rs	2026-11-15 09:12:16
-@@ -73,6 +73,7 @@
+Forwarded: no
+---
+--- a/lib/process_data/src/fdinfo.rs	2026-11-16 10:37:39
++++ b/lib/process_data/src/fdinfo.rs	2026-11-16 10:37:39
+@@ -23,6 +23,7 @@
      HashMap::from_iter([
          ("amdgpu", vec!["drm-engine-compute", "drm-engine-gfx"]),
          ("i915", vec!["drm-engine-render"]),
@@ -16,7 +16,7 @@ diff --color -ruN -x . resources-orig/lib/process_data/src/lib.rs resources/lib/
          ("v3d", vec!["drm-engine-render"]),
      ])
  });
-@@ -113,6 +114,7 @@
+@@ -63,6 +64,7 @@
          ("amdgpu", vec!["drm-memory-gtt", "drm-memory-vram"]),
          ("amdxdna_accel_driver", vec!["drm-total-memory"]),
          ("i915", vec!["drm-total-local0", "drm-total-system0"]),
@@ -24,18 +24,17 @@ diff --color -ruN -x . resources-orig/lib/process_data/src/lib.rs resources/lib/
          ("v3d", vec!["drm-total-memory"]),
          ("xe", vec!["drm-total-gtt", "drm-total-vram0"]),
      ])
-@@ -765,7 +767,7 @@
-                         .map(|names| Self::parse_drm_fields(fdinfo, names, &RE_DRM_TIME))
-                         .unwrap_or_default(),
-                 },
--                "v3d" => GpuUsageStats::V3dStats {
-+                "v3d" | "msm" => GpuUsageStats::V3dStats {
-                     gfx_ns: GFX_NS_DRM_FIELDS
-                         .get(driver.as_str())
-                         .map(|names| Self::parse_drm_fields(fdinfo, names, &RE_DRM_TIME))
-diff --color -ruN -x . resources-orig/src/utils/gpu/mod.rs resources/src/utils/gpu/mod.rs
---- a/src/utils/gpu/mod.rs	2026-11-15 09:10:14
-+++ b/src/utils/gpu/mod.rs	2026-11-15 09:12:16
+@@ -233,7 +235,7 @@
+             gfx_ns: drm_field(driver, &GFX_NS_DRM_FIELDS, fdinfo, &RE_DRM_TIME),
+             video_ns: drm_field(driver, &ENC_NS_DRM_FIELDS, fdinfo, &RE_DRM_TIME),
+         },
+-        "v3d" => GpuUsageStats::V3dStats {
++        "v3d" | "msm" => GpuUsageStats::V3dStats {
+             gfx_ns: drm_field(driver, &GFX_NS_DRM_FIELDS, fdinfo, &RE_DRM_TIME),
+             mem_bytes: drm_mem_bytes(driver, fdinfo),
+         },
+--- a/src/devices/gpu/mod.rs	2026-11-16 10:37:39
++++ b/src/devices/gpu/mod.rs	2026-11-16 10:37:39
 @@ -1,5 +1,6 @@
  mod amd;
  mod intel;
@@ -60,14 +59,14 @@ diff --color -ruN -x . resources-orig/src/utils/gpu/mod.rs resources/src/utils/g
  }
  
 @@ -212,6 +215,7 @@
-             Gpu::Intel(gpu) => gpu,
-             Gpu::Nvidia(gpu) => gpu,
-             Gpu::V3d(gpu) => gpu,
-+            Gpu::Msm(gpu) => gpu,
-             Gpu::Other(gpu) => gpu,
+             Self::Intel(gpu) => gpu,
+             Self::Nvidia(gpu) => gpu,
+             Self::V3d(gpu) => gpu,
++            Self::Msm(gpu) => gpu,
+             Self::Other(gpu) => gpu,
          }
      }
-@@ -337,6 +341,18 @@
+@@ -335,6 +339,18 @@
                      hwmon_vec.first().cloned(),
                  )),
                  "v3d",
@@ -75,7 +74,7 @@ diff --color -ruN -x . resources-orig/src/utils/gpu/mod.rs resources/src/utils/g
 +        } else if (driver == "msm_dpu" || driver == "msm") && MsmGpu::is_present() {
 +            // msm fdinfo has no drm-pdev, so per-process stats land on the default identifier; use it here too
 +            (
-+                Gpu::Msm(MsmGpu::new(
++                Self::Msm(MsmGpu::new(
 +                    device,
 +                    GpuIdentifier::default(),
 +                    driver,
@@ -86,9 +85,8 @@ diff --color -ruN -x . resources-orig/src/utils/gpu/mod.rs resources/src/utils/g
              )
          } else {
              (
-diff --color -ruN -x . resources-orig/src/utils/gpu/msm.rs resources/src/utils/gpu/msm.rs
---- a/src/utils/gpu/msm.rs	1969-12-31 19:00:00
-+++ b/src/utils/gpu/msm.rs	2026-11-15 09:16:41
+--- /dev/null	2026-11-16 10:37:39
++++ b/src/devices/gpu/msm.rs	2026-11-16 10:37:39
 @@ -0,0 +1,256 @@
 +// Qualcomm Adreno GPUs driven by the upstream msm DRM driver (Snapdragon X Elite/Plus laptops, etc.).
 +//
@@ -110,7 +108,7 @@ diff --color -ruN -x . resources-orig/src/utils/gpu/msm.rs resources/src/utils/g
 +    time::Instant,
 +};
 +
-+use crate::utils::{pci::Device, read_parsed};
++use crate::{devices::pci::Device, utils::read_parsed};
 +
 +use super::GpuImpl;
 +

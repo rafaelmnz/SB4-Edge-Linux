@@ -1,6 +1,6 @@
 # SB4-Edge-Linux
 
-**Samsung Galaxy Book4 Edge 16" – Linux.** Build scripts for a customised Ubuntu 26.04.1 LTS (arm64) live/installer
+**Samsung Galaxy Book4 Edge 16" – Linux.** Build scripts for a customised Ubuntu 27.04 (arm64) live/installer
 ISO for the Samsung Galaxy Book4 Edge 16" (Snapdragon X Elite X1E-84-100), with the kernel, firmware and
 userspace pieces this laptop needs.
 
@@ -12,11 +12,11 @@ Ready-made ISOs are on the [Releases](https://github.com/rafaelmnz/SB4-Edge-Linu
 because GitHub limits each file to 2 GB. Download every `.part*` file plus `SHA256SUMS`, then join and check:
 
 ```sh
-cat ubuntu-26.04.1-sb4edge-desktop-arm64.iso.part* > ubuntu-26.04.1-sb4edge-desktop-arm64.iso
+cat ubuntu-27.04-sb4edge-desktop-arm64.iso.part* > ubuntu-27.04-sb4edge-desktop-arm64.iso
 shasum -a 256 -c SHA256SUMS      # Linux: sha256sum -c SHA256SUMS
 ```
 
-(Windows: `copy /b ubuntu-26.04.1-sb4edge-desktop-arm64.iso.part1 + ...part2 + ...part3 ubuntu-26.04.1-sb4edge-desktop-arm64.iso`.)
+(Windows: `copy /b ubuntu-27.04-sb4edge-desktop-arm64.iso.part1 + ...part2 + ...part3 ubuntu-27.04-sb4edge-desktop-arm64.iso`.)
 Or build it yourself with `build.sh` (below).
 
 **Installing next to Windows** (shrink C: in Windows first, BitLocker recovery key, Secure Boot off): see
@@ -27,7 +27,7 @@ Or build it yourself with `build.sh` (below).
 | Part | Status | Notes |
 |---|---|---|
 | Display (2880x1800 OLED, 120 Hz) | works | brightness, VRR; brightness remembered across boots |
-| Ambient light sensor | works | automatic screen brightness (GNOME) and keyboard backlight (off above 100 lux, on below 50 lux, like Windows) |
+| Ambient light sensor | works | automatic screen brightness (GNOME, with two modes: around the slider or follow room light) and keyboard backlight (off above 100 lux, on below 50 lux, like Windows) |
 | Keyboard, touchpad | works | keyboard backlight remembered across boots |
 | Wi-Fi 7 (WCN7850), Bluetooth | works | |
 | Speakers (4x WSA883x), headphone jack | works | |
@@ -37,9 +37,9 @@ Or build it yourself with `build.sh` (below).
 | USB-A | works | SuperSpeed |
 | HDMI | works | |
 | SD card reader | works | |
-| Battery, charging, fan profiles | works | |
+| Battery, charging, fan profiles | works | charge limit (GNOME "Preserve battery health") |
 | Windows (BitLocker) partitions | works | opened in Files with the BitLocker password or recovery key |
-| Fingerprint reader | works | EgisTec 1c7a:05a1 in the power button: GNOME login and lock screen, sudo; prints stay on the sensor (SDCP) and can be shared with Windows Hello |
+| Fingerprint reader | works | EgisTec 1c7a:05a1 in the power button: GNOME login and lock screen, sudo; prints stay on the sensor (SDCP) and can be shared with Windows Hello; relabel fingers in Settings |
 
 Known issues: switching a USB-C port from DisplayPort back to USB 3 can fail until reboot; Secure Boot must be off
 (the kernel is not signed). The 14" model shares most of the devicetree but is untested.
@@ -56,6 +56,10 @@ Known issues: switching a USB-C port from DisplayPort back to USB 3 can fail unt
   `adsprpcd` serves the sensor registry, `libssc` + iio-sensor-proxy 3.9 read it, GNOME adjusts the screen,
   `sb4edge-kbd-ambient` switches the keyboard backlight.
 - **Boot**: rEFInd on the installed system (Linux and Windows), GRUB on the USB stick.
+- **GNOME** (`patches/gnome-*`): Settings -> Power -> "Brightness Adjustment" chooses how the light sensor sets
+  the brightness (up to 25 % around the slider, or a fixed room-light curve the slider shifts); Settings -> Users ->
+  Fingerprint can relabel which finger a print is. An apt hook rebuilds both packages with the patches when Ubuntu
+  updates them.
 - Rebuilt Ubuntu packages: cryptsetup (BitLocker volumes from recent Windows 11), libcamera (OV02C10), Resources
   (Adreno GPU page), libfprint with SDCP (`extra/libfprint`, fingerprint reader).
 - **Fingerprint** (`extra/libfprint`): the EgisTec sensor only keeps enrolled prints over SDCP. libfprint MR !547
@@ -87,10 +91,10 @@ Needs an arm64 host with Docker (an Apple Silicon Mac works) and about 60 GB of 
 ./build.sh iso        # only the ISO step (after the others have run once)
 ```
 
-Steps: `image kernel modules usbc ssc fastrpc cryptsetup resources libcamera libfprint iso`. The Ubuntu 26.04.1 desktop arm64
-ISO is downloaded to `iso/` on the first ISO build. The result is `out/ubuntu-26.04.1-sb4edge-desktop-arm64.iso`.
+Steps: `image kernel modules usbc ssc fastrpc cryptsetup resources libcamera libfprint gnome iso`. Ubuntu has no
+27.04 arm64 desktop ISO, so the Ubuntu 26.10 desktop arm64 ISO is upgraded to 27.04 while remastering. It is downloaded to `iso/` on the first ISO build. The result is `out/ubuntu-27.04-sb4edge-desktop-arm64.iso`.
 
-Write it to a USB drive (e.g. `dd if=out/ubuntu-26.04.1-sb4edge-desktop-arm64.iso of=/dev/rdiskN bs=4m` on macOS),
+Write it to a USB drive (e.g. `dd if=out/ubuntu-27.04-sb4edge-desktop-arm64.iso of=/dev/rdiskN bs=4m` on macOS),
 turn Secure Boot off in the BIOS and boot from it.
 
 ## Third-party files

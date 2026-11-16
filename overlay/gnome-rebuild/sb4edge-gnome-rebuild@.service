@@ -1,0 +1,10 @@
+[Unit]
+Description=Rebuild %i with the sb4edge patches
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Nice=10
+ExecStart=/usr/lib/sb4edge/sb4edge-gnome-rebuild %i
+TimeoutStartSec=2h

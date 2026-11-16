@@ -7,7 +7,11 @@ Windows print (its duplicate check removes on-chip prints it does not know). So:
 records the chip prints not yet known to fprintd as fingers of a Linux user. Nothing is written to the sensor.
 
   sudo sb4edge-fingerprint-import [user] [finger]   one new print -> that finger (default: you, right-index)
-  sudo sb4edge-fingerprint-import --list
+  sudo sb4edge-fingerprint-import --list            prints on the sensor, and which Linux finger each one is
+  sudo sb4edge-fingerprint-import --rename FROM TO [user]
+                                                    relabel a print, e.g. right-index left-index (Windows Hello
+                                                    numbers its prints 1, 2, 3 and never says which finger, so
+                                                    --auto can only guess). Nothing is written to the sensor.
   sb4edge-fingerprint-import --auto                 every new print -> the only regular user, next free finger
                                                     (sb4edge-fingerprint-import.service at boot, and at login)
   sb4edge-fingerprint-import --pam                  --auto in the background, for pam_exec (does not delay login)
@@ -58,6 +62,33 @@ def save(dev, p, user, nick):
     log(f'{nick}-finger of {user} now uses a print enrolled in Windows Hello')
 
 
+def rename(src=None, dst=None, user=None):
+    """Relabel a stored print as another finger. Only fprintd's files change; the print on the chip stays."""
+    user = user or os.environ.get('SUDO_USER') or sys.exit('no user given')
+    pwd.getpwnam(user)
+    src, dst = (f and f.removesuffix('-finger') for f in (src, dst))
+    if src not in FINGERS or dst not in FINGERS:
+        sys.exit('usage: sudo sb4edge-fingerprint-import --rename FROM TO [user]\nfingers: ' + ' '.join(FINGERS))
+    if src == dst:
+        return
+    srcs = glob.glob(f'{STORE}/{user}/*/*/{int(FINGERS[src])}')
+    if not srcs:
+        sys.exit(f'{user} has no {src} print')
+    for old in srcs:
+        new = f'{os.path.dirname(old)}/{int(FINGERS[dst])}'
+        if os.path.exists(new):
+            sys.exit(f'{user} already has a {dst} print: rename or delete that one first')
+        p = FPrint.Print.deserialize(open(old, 'rb').read())
+        p.set_finger(FINGERS[dst])
+        with open(new, 'wb') as f:
+            f.write(p.serialize())
+        os.chmod(new, 0o600)
+        os.remove(old)
+    # No fprintd restart: it reads its store on every ListEnrolledFingers, and a restart would break an open
+    # Settings fingerprint dialog (it holds the device).
+    log(f'{src}-finger of {user} is now {dst}-finger')
+
+
 def open_device():
     """fprintd holds the sensor while it runs; it is D-Bus activated and comes back on its own when needed."""
     ctx = FPrint.Context()
@@ -81,11 +112,19 @@ def main():
     if os.geteuid() != 0:
         sys.exit('run with sudo')
     args = sys.argv[1:]
-    mode = args[0] if args[:1] and args[0] in ('--list', '--auto', '--pam') else 'manual'
+    mode = args[0] if args[:1] and args[0] in ('--list', '--auto', '--pam', '--rename') else 'manual'
+
+    if mode == '--rename':
+        rename(*args[1:])
+        return
 
     if mode == '--pam':
         # pam_exec waits for us: detach and let the login continue.
         if os.environ.get('PAM_TYPE') not in (None, 'open_session'):
+            return
+        # Only desktop logins: ssh, su, sudo, cron sessions must not touch the sensor (opening it resets its USB link).
+        if os.environ.get('PAM_SERVICE', '') not in ('', 'gdm-password', 'gdm-fingerprint', 'gdm-autologin',
+                                                    'login', 'sddm', 'lightdm'):
             return
         if os.fork():
             return
@@ -121,7 +160,12 @@ def main():
         stored = stored_prints(dev)
         new = [p for p in on_chip if not any(p.equal(s[2]) for s in stored)]
         log(f'{len(on_chip)} print(s) on the sensor, {len(on_chip) - len(new)} already used by Linux, {len(new)} new')
-        if mode == '--list' or not new:
+        if mode == '--list':
+            for i, p in enumerate(on_chip, 1):
+                who = [f'{u} {FPrint.Finger(n).value_nick}' for u, n, sp in stored if p.equal(sp)]
+                log(f'  print {i}: ' + (', '.join(who) if who else 'not used by Linux'))
+            return
+        if not new:
             return
         if mode == 'manual':
             if len(new) != 1:
