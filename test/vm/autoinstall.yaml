@@ -1,0 +1,25 @@
+autoinstall:
+  version: 1
+  interactive-sections: []
+  identity:
+    hostname: sb4test
+    username: ubuntu
+    realname: Test
+    # test VM only: the password is "ubuntu" (openssl passwd -6 ubuntu)
+    password: '$6$sb4edgetest$jYxTTRu9VRBBJwmLAo8AP/PDv63OedhTyNWMDdUTlL6Oqn0Z9esgpy71aTxaNNzs6X.KnLISRYkOiklEU7TGI.'
+  storage:
+    layout:
+      name: direct
+      mode: use_gap
+  codecs: {install: false}
+  drivers: {install: false}
+  updates: security
+  apt:
+    fallback: offline-install
+  late-commands:
+    - sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="console=tty0 console=ttyAMA0,115200"/; s/^GRUB_TIMEOUT_STYLE=.*/GRUB_TIMEOUT_STYLE=menu/; s/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=5/' /target/etc/default/grub
+    - echo 'GRUB_TERMINAL=console' >> /target/etc/default/grub
+    - echo 'GRUB_DISABLE_OS_PROBER=false' >> /target/etc/default/grub
+    - curtin in-target -- update-grub
+    - sh -c '{ echo "=== SB4TEST lsblk"; lsblk -o NAME,SIZE,FSTYPE,LABEL,PARTLABEL,MOUNTPOINTS; echo "=== SB4TEST sgdisk"; sgdisk -p /dev/vda; echo "=== SB4TEST efibootmgr"; efibootmgr -v; echo "=== SB4TEST esp"; find /target/boot/efi -type f | xargs ls -la; echo "=== SB4TEST boot"; ls -la /target/boot; echo "=== SB4TEST kernels"; chroot /target dpkg -l "linux-image*" "os-prober" | grep -E "^(ii|rc)"; echo "=== SB4TEST os-prober"; curtin in-target -- os-prober; ls /target/etc/grub.d; grep -i prober /target/etc/default/grub; echo "=== SB4TEST grub menu"; grep -E "^menuentry|^submenu|os-prober|Windows" /target/boot/grub/grub.cfg; echo "=== SB4TEST end"; } > /dev/ttyAMA0 2>&1'
+  shutdown: poweroff

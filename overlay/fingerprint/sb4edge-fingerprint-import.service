@@ -1,0 +1,13 @@
+[Unit]
+Description=Use fingerprints enrolled in Windows Hello for Linux login
+# Before the login screen, so a finger enrolled in Windows works at the first login after it.
+Before=display-manager.service
+After=systemd-udev-settle.service dbus.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/sb4edge-fingerprint-import --auto
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target

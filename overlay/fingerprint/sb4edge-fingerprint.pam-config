@@ -1,0 +1,6 @@
+Name: Import fingerprints enrolled in Windows Hello at login (SB4-Edge)
+Default: yes
+Priority: 0
+Session-Type: Additional
+Session:
+	optional	pam_exec.so quiet /usr/sbin/sb4edge-fingerprint-import --pam
