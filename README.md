@@ -4,6 +4,8 @@
 ISO for the Samsung Galaxy Book4 Edge 16" (Snapdragon X Elite X1E-84-100), with the kernel, firmware and
 userspace pieces this laptop needs.
 
+[![Buy me a coffee](https://img.shields.io/badge/buy%20me%20a%20coffee-PayPal-ffdd00?logo=paypal&logoColor=white)](https://paypal.me/rafaelmnz)
+
 ## Download
 
 Ready-made ISOs are on the [Releases](https://github.com/rafaelmnz/SB4-Edge-Linux/releases) page, split in parts
@@ -129,6 +131,12 @@ This project builds on other people's work on this laptop and on the Snapdragon 
   [audioreach-graphservices](https://github.com/AudioReach/audioreach-graphservices)**.
 - **[rEFInd](https://www.rodsbooks.com/refind/)** (Rod Smith), **[stubble](https://github.com/ubuntu/stubble)**,
   **[alsa-ucm-conf](https://github.com/alsa-project/alsa-ucm-conf)**, and the mainline Linux Qualcomm maintainers.
+
+## Buy me a coffee ☕
+
+If this got Linux running on your Book4 Edge and saved you a few weekends of poking at device trees, you can buy me
+a coffee at [paypal.me/rafaelmnz](https://paypal.me/rafaelmnz). Totally optional, but it keeps me going (and the
+laptop on Linux)! Bug reports, test results from the 14" and 15.6" and pull requests are just as welcome.
 
 ## License
 
