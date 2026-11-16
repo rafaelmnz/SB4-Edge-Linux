@@ -1,0 +1,15 @@
+--- a/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge.dtsi
++++ b/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge.dtsi
+@@ -880,6 +880,12 @@
+ 
+ 	status = "okay";
+ 
++	/* EC (ENE KB9058) command port: keyboard backlight */
++	kbd-backlight@62 {
++		compatible = "samsung,galaxy-book4-edge-kbd-backlight";
++		reg = <0x62>;
++	};
++
+ 	eusb5_repeater: redriver@43 {
+ 		compatible = "nxp,ptn3222";
+ 		reg = <0x43>;

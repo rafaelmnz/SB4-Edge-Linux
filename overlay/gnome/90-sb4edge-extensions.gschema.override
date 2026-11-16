@@ -1,0 +1,4 @@
+# External monitor brightness slider (DDC/CI via ddcutil) in the system menu. Ubuntu's own extensions
+# (dock, desktop icons, tiling assistant) are enabled by the ubuntu session mode, not by this key.
+[org.gnome.shell]
+enabled-extensions=['display-brightness-ddcutil@themightydeity.github.com']

@@ -1,0 +1,11 @@
+[Unit]
+Description=Remember the panel and keyboard backlight levels chosen in the user session
+After=systemd-logind.service
+
+[Service]
+ExecStart=/usr/libexec/sb4edge-backlight watch
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,1 @@
+{"veml3328_0_platform.keyboard_backlight_condition":{"owner":"sns_veml3328","debounce_time_sec":{"type":"flt","ver":"0","data":"3"},"gpio_to_ec":{"type":"flt","ver":"0","data":"219"},"backlight_on_lux":{"type":"flt","ver":"0","data":"50"},"backlight_off_lux":{"type":"flt","ver":"0","data":"100"},"support_kbd_backlit_on_gpio":{"type":"flt","ver":"0","data":"1"}}}

@@ -1,0 +1,14 @@
+#!/bin/sh
+# Opens BitLocker partitions that carry a clear key (BitLocker suspended, or Windows device encryption not yet
+# bound to an account), so GNOME Files lists the Windows drive ready to mount. Volumes without a clear key are
+# left alone: Files asks for the BitLocker password or recovery key when you click them.
+for dev in $(blkid -t TYPE=BitLocker -o device 2>/dev/null); do
+    name="bitlk-$(basename "$dev")"
+    [ -e "/dev/mapper/$name" ] && continue
+    if cryptsetup open --type bitlk "$dev" "$name" </dev/null 2>/dev/null; then
+        echo "$dev unlocked with its clear key as /dev/mapper/$name"
+    else
+        echo "$dev has no clear key; unlock it in Files with the BitLocker password or recovery key"
+    fi
+done
+exit 0

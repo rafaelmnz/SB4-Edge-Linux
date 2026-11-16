@@ -1,0 +1,12 @@
+[Unit]
+Description=sb4edge: built-in display 60 Hz on battery, 120 Hz on AC
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=/usr/lib/sb4edge/sb4edge-refresh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

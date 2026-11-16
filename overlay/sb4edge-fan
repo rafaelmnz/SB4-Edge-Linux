@@ -1,0 +1,91 @@
+#!/bin/bash
+# Fan curve for the Samsung Galaxy Book4 Edge. The EC never starts the fan by itself (omarchy gb4e: it stays
+# off with the CPU at 95 °C); on Windows the OS sets the speed. The samsung_galaxybook_kbd driver exposes the
+# EC's fan target as hwmon fan1_target; this sets it from the hottest CPU thermal zone.
+#
+# The curve follows the performance mode (GNOME Power Mode -> power-profiles-daemon ->
+# /sys/firmware/acpi/platform_profile, which samsung_galaxybook_kbd also passes to the EC, as Samsung
+# Settings does on Windows):
+#   quiet        (Power Saver)  quieter, later fan; CPU capped at QUIET_MAX_KHZ
+#   balanced     (Balanced)     Windows' "Optimized"
+#   performance  (Performance)  earlier, faster fan; "performance" CPU governor (reaches the 4.2 GHz boost)
+# Override any of the arrays below in /etc/default/sb4edge-fan.
+set -u
+BALANCED_TRIPS=(60 70 80 88)            # °C
+BALANCED_RPMS=(0 3000 4500 6000 8000)   # one more than TRIPS
+QUIET_TRIPS=(65 75 85 90)
+QUIET_RPMS=(0 2500 3500 4500 6000)
+PERFORMANCE_TRIPS=(50 60 70 80)
+PERFORMANCE_RPMS=(0 3500 5000 7000 9000)
+QUIET_MAX_KHZ=2515200                   # Windows' Quiet lowers the CPU throttle floor to 64%
+HYST=5
+[ -r /etc/default/sb4edge-fan ] && . /etc/default/sb4edge-fan
+
+target=
+for i in {1..30}; do
+  for h in /sys/class/hwmon/hwmon*; do
+    [ "$(cat "$h/name" 2>/dev/null)" = samsung_galaxybook_ec ] && target=$h/fan1_target && break 2
+  done
+  sleep 1
+done
+[ -n "$target" ] || { echo "samsung_galaxybook_ec hwmon not found (samsung_galaxybook_kbd not loaded?)" >&2; exit 1; }
+
+cpu_temp() {
+  local z t max=0
+  for z in /sys/class/thermal/thermal_zone*; do
+    [[ $(<"$z/type") == cpu* ]] || continue
+    t=$(<"$z/temp") || continue
+    ((t > max)) && max=$t
+  done
+  echo $((max / 1000))
+}
+
+profile() {
+  local p
+  p=$(cat /sys/firmware/acpi/platform_profile 2>/dev/null)
+  case $p in quiet|performance) echo "$p" ;; *) echo balanced ;; esac
+}
+
+# CPU frequency cap: QUIET_MAX_KHZ in quiet, none otherwise (the kernel clamps the large value to the
+# policy's maximum, which includes the 4.2 GHz boost of clusters 1 and 2 once boost is on).
+# Performance also switches the governor to "performance": schedutil never picks the 4.2 GHz boost step
+# (measured: 0 s at 4.2 GHz under a pinned busy loop, 250 s during Geekbench with "performance").
+set_cpu_cap() {
+  local pol max gov
+  for pol in /sys/devices/system/cpu/cpufreq/policy*; do
+    max=99999999 gov=schedutil
+    [ "$1" = quiet ] && max=$QUIET_MAX_KHZ
+    [ "$1" = performance ] && gov=performance
+    echo "$gov" > "$pol/scaling_governor"
+    echo "$max" > "$pol/scaling_max_freq"
+  done
+}
+
+# CPU boost (SCMI boost OPPs, 4.2 GHz on clusters 1 and 2, the X1E-84-100's rated boost as on Windows) is off
+# by default in the kernel; without it the CPU stops at 3.8 GHz.
+[ -w /sys/devices/system/cpu/cpufreq/boost ] && echo 1 > /sys/devices/system/cpu/cpufreq/boost
+
+restore() { echo 0 > "$target"; set_cpu_cap balanced; exit 0; }
+trap restore TERM INT
+
+mode= step=0 last=-1 since=0
+while :; do
+  p=$(profile)
+  if [ "$p" != "$mode" ]; then
+    mode=$p
+    declare -n TRIPS=${mode^^}_TRIPS RPMS=${mode^^}_RPMS
+    set_cpu_cap "$mode"
+    echo "mode $mode"
+    last=-1
+  fi
+  t=$(cpu_temp)
+  ((step > ${#TRIPS[@]})) && step=${#TRIPS[@]}
+  while ((step < ${#TRIPS[@]} && t >= TRIPS[step])); do ((step++)); done
+  while ((step > 0 && t < TRIPS[step - 1] - HYST)); do ((step--)); done
+  # Write on a change, and every 30 s in case the EC was reset.
+  if ((step != last || SECONDS - since >= 30)); then
+    ((step != last)) && echo "$t °C: ${RPMS[step]} rpm"
+    echo "${RPMS[step]}" > "$target" && last=$step since=$SECONDS
+  fi
+  sleep 2
+done

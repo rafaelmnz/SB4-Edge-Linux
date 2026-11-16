@@ -1,0 +1,247 @@
+{
+  "config":{
+    "hw_platform": ["CRD"],
+    "soc_id": ["555", "635", "615", "616"]
+  },
+  "veml3328_0_platform":{
+    "owner": "sns_veml3328",
+    ".config":{
+      "owner": "sns_veml3328",
+      "bus_type":{ "type": "int", "ver": "0",
+        "data": "0"
+      },
+      "bus_instance":{ "type": "int", "ver": "0",
+        "data": "7"
+      },
+      "slave_config":{ "type": "int", "ver": "0",
+        "data": "16"
+      },
+      "min_bus_speed_khz":{ "type": "int", "ver": "0",
+        "data": "400"
+      },
+      "max_bus_speed_khz":{ "type": "int", "ver": "0",
+        "data": "400"
+      },
+      "reg_addr_type":{ "type": "int", "ver": "0",
+        "data": "0"
+      },
+      "num_rail":{ "type": "int", "ver": "0",
+        "data": "2"
+      },
+      "rail_on_state":{ "type": "int", "ver": "0",
+        "data": "2"
+      },
+      "vdd_rail":{ "type": "str", "ver": "0",
+        "data": "/pmic/client/dummy_vdd"
+      },
+      "vddio_rail":{ "type": "str", "ver": "0",
+        "data": "/pmic/client/dummy_vdd"
+      },
+      "rigid_body_type":{ "type": "int", "ver": "0",
+      "data": "0"
+      }
+    },
+    ".rgb":{
+      "owner": "sns_veml3328",
+      ".fac_cal":
+      {
+        "owner": "sns_veml3328",
+        "r_channel_scale":{ "type": "flt", "ver": "0",
+            "data": "1.0"
+        },
+        "r_channel_bias":{ "type": "flt", "ver": "0",
+            "data": "0.0"
+        },
+        "g_channel_scale":{ "type": "flt", "ver": "0",
+            "data": "1.0"
+        },
+        "g_channel_bias":{ "type": "flt", "ver": "0",
+            "data": "0.0"
+        },
+        "b_channel_scale":{ "type": "flt", "ver": "0",
+            "data": "1.0"
+        },
+        "b_channel_bias":{ "type": "flt", "ver": "0",
+            "data": "0.0"
+        },
+        "color_temp_scale":{ "type": "flt", "ver": "0",
+            "data": "1.0"
+        },
+        "color_temp_bias":{ "type": "flt", "ver": "0",
+            "data": "0.0"
+        }		
+      }
+    },
+    ".placement":{
+      "owner": "sns_veml3328",
+      "0":{ "type": "flt", "ver": "0",
+        "data": "0.0"
+      },
+      "1":{ "type": "flt", "ver": "0",
+        "data": "0.0"
+      },
+      "2":{ "type": "flt", "ver": "0",
+        "data": "0.0"
+      },
+      "3":{ "type": "flt", "ver": "0",
+        "data": "0.0"
+      },
+      "4":{ "type": "flt", "ver": "0",
+        "data": "0.0"
+      },
+      "5":{ "type": "flt", "ver": "0",
+        "data": "0.0"
+      },
+      "6":{ "type": "flt", "ver": "0",
+        "data": "0.0"
+      },
+      "7":{ "type": "flt", "ver": "0",
+        "data": "0.0"
+      },
+      "8":{ "type": "flt", "ver": "0",
+        "data": "0.0"
+      },
+      "9":{ "type": "flt", "ver": "0",
+        "data": "0.0"
+      },
+      "10":{ "type": "flt", "ver": "0",
+        "data": "0.0"
+      },
+      "11":{ "type": "flt", "ver": "0",
+        "data": "0.0"
+      }
+    },
+    ".per_model_lux":{
+      "owner": "sns_veml3328",
+      "LG":{ "type": "flt", "ver": "0",
+        "data": "0.8033"
+      },
+      "LC":{ "type": "flt", "ver": "0",
+        "data": "0.0"
+      },
+      "Exp_Lux":{ "type": "flt", "ver": "0",
+        "data": "1.0073"
+      },
+      "Lh0":{ "type": "flt", "ver": "0",
+        "data": "1.0"
+      },
+      "Lh1":{ "type": "flt", "ver": "0",
+        "data": "0.0"
+      },
+      "Ll0":{ "type": "flt", "ver": "0",
+        "data": "1.0"
+      },
+      "Ll1":{ "type": "flt", "ver": "0",
+        "data": "0.0"
+      },
+      "Ch_min":{ "type": "flt", "ver": "0",
+        "data": "1.0"
+      },
+      "Ch_max":{ "type": "flt", "ver": "0",
+        "data": "1.0"
+      },
+      "Cl_min":{ "type": "flt", "ver": "0",
+        "data": "1.0"
+      },
+      "Cl_max":{ "type": "flt", "ver": "0",
+        "data": "1.0"
+      },
+      "Jh":{ "type": "flt", "ver": "0",
+        "data": "1.0"
+      },
+      "Jl":{ "type": "flt", "ver": "0",
+        "data": "1.0"
+      }
+    },
+    ".per_model_cct":{
+      "owner": "sns_veml3328",
+      "Lccti0":{ "type": "flt", "ver": "0",
+        "data": "1.0"
+      },
+      "Lccti1":{ "type": "flt", "ver": "0",
+        "data": "0.0"
+      },
+      "X1":{ "type": "flt", "ver": "0",
+        "data": "2.0"
+      },
+      "X2":{ "type": "flt", "ver": "0",
+        "data": "1.0"
+      },
+      "Y1":{ "type": "flt", "ver": "0",
+        "data": "1.0"
+      },
+      "E0":{ "type": "flt", "ver": "0",
+        "data": "0.0"
+      },
+      "E1":{ "type": "flt", "ver": "0",
+        "data": "0.0"
+      },
+      "E2":{ "type": "flt", "ver": "0",
+        "data": "0.0"
+      },
+      "E3":{ "type": "flt", "ver": "0",
+        "data": "1803.005"
+      },
+      "Exp_CCT":{ "type": "flt", "ver": "0",
+        "data": "-2.036"
+      },
+      "Ecct_min":{ "type": "flt", "ver": "0",
+        "data": "2300.0"
+      },
+      "Ecct_max":{ "type": "flt", "ver": "0",
+        "data": "7000.0"
+      }
+    },
+    ".per_model_xy":{
+      "owner": "sns_veml3328",
+      "A0":{ "type": "flt", "ver": "0",
+        "data": "-0.0177"
+      },
+      "A1":{ "type": "flt", "ver": "0",
+        "data": "0.5895"
+      },
+      "A2":{ "type": "flt", "ver": "0",
+        "data": "0.0"
+      },
+      "B0":{ "type": "flt", "ver": "0",
+        "data": "0.2696"
+      },
+      "B1":{ "type": "flt", "ver": "0",
+        "data": "0.1714"
+      },
+      "B2":{ "type": "flt", "ver": "0",
+        "data": "0.0"
+      },
+      "Dx_min":{ "type": "flt", "ver": "0",
+        "data": "0.27"
+      },
+      "Dx_max":{ "type": "flt", "ver": "0",
+        "data": "0.55"
+      },
+      "Dy_min":{ "type": "flt", "ver": "0",
+        "data": "0.1"
+      },
+      "Dy_max":{ "type": "flt", "ver": "0",
+        "data": "0.65"
+      }
+    },
+    ".keyboard_backlight_condition":{
+      "owner": "sns_veml3328",
+      "debounce_time_sec":{ "type": "flt", "ver": "0",
+        "data": "3.0"
+      },
+      "gpio_to_ec":{ "type": "flt", "ver": "0",
+        "data": "219.0"
+      },
+      "backlight_on_lux":{ "type": "flt", "ver": "0",
+        "data": "50.0"
+      },
+      "backlight_off_lux":{ "type": "flt", "ver": "0",
+        "data": "100.0"
+      },
+      "support_kbd_backlit_on_gpio":{ "type": "flt", "ver": "0",
+        "data": "1.0"
+      }
+    }
+  }
+}

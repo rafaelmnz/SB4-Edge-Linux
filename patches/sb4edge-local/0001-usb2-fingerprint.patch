@@ -1,0 +1,28 @@
+--- a/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge.dtsi
++++ b/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge.dtsi
+@@ -1503,6 +1503,25 @@
+ };
+ 
+ 
++/*
++ * Fingerprint reader (EgisTec 1c7a:05a1, match-on-chip) on usb_2. On the 16" eusb6 drives the
++ * USB-A port (usb_mp_hsphy0), so usb_2 sits behind the otherwise unused eusb5 repeater (TLMM 7).
++ */
++&usb_2 {
++	dr_mode = "host";
++
++	status = "okay";
++};
++
++&usb_2_hsphy {
++	vdd-supply = <&vreg_l2e_0p8>;
++	vdda12-supply = <&vreg_l3e_1p2>;
++
++	phys = <&eusb5_repeater>;
++
++	status = "okay";
++};
++
+ /* MP0 goes to the USB-A port(USB3) and FPC */
+ &usb_mp {
+ 	status = "okay";

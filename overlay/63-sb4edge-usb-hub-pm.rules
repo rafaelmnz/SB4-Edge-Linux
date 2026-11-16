@@ -1,0 +1,3 @@
+# Samsung Galaxy Book4 Edge: usbcore is built in, so a modprobe.d autosuspend option never applies.
+# Hubs autosuspend after 2 s and USB-C hubs/docks drop off the bus (omarchy gb4e notes); keep hubs awake.
+ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{bDeviceClass}=="09", TEST=="power/control", ATTR{power/control}="on"

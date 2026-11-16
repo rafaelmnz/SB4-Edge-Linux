@@ -1,0 +1,21 @@
+ASoC: soc-core: start the rtd component list empty
+
+devm_kzalloc_flex() sets the __counted_by counter (rtd->num_components) to the
+allocated size, but snd_soc_rtd_add_component() appends at num_components. On
+7.4-rc2 every component therefore lands past slots that stay NULL, and
+for_each_rtd_components() stops at the first NULL: soc_probe_link_components()
+probes nothing, no component DAPM widgets exist, all routes fail and the card
+never registers (Galaxy Book4 Edge: no audio, wcd938x set_jack -22).
+
+--- a/sound/soc/soc-core.c
++++ b/sound/soc/soc-core.c
+@@ -387,6 +387,9 @@
+ 		return NULL;
+ 	}
+ 
++	/* kzalloc_flex set the counter to the size; snd_soc_rtd_add_component() counts from 0 */
++	rtd->num_components = 0;
++
+ 	rtd->dev = dev;
+ 	INIT_LIST_HEAD(&rtd->list);
+ 	for_each_pcm_streams(stream) {

@@ -1,0 +1,12 @@
+[Unit]
+Description=Add "Microphone (Fluence)" to PipeWire once the sound card is up
+After=pipewire.service wireplumber.service
+PartOf=pipewire.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/sb4edge/fluence/sb4edge-fluence-source
+
+[Install]
+WantedBy=pipewire.service

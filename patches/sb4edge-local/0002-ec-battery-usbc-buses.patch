@@ -1,0 +1,36 @@
+--- a/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge.dtsi
++++ b/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge.dtsi
+@@ -867,6 +867,12 @@
+ 
+ 		wakeup-source;
+ 	};
++
++	/* ENE KB9058 EC: battery state over its mailbox (samsung_galaxybook_battery) */
++	embedded-controller@64 {
++		compatible = "samsung,galaxybook-battery";
++		reg = <0x64>;
++	};
+ };
+ 
+ &i2c5 {
+@@ -927,6 +933,20 @@
+ 	clock-frequency = <400000>;
+ 
+ 	status = "okay";
++};
++
++/* USB-C port 0: Samsung S2MM006 PD controller at 0x33 (on the 14", ACPI EMEC IC10) */
++&i2c9 {
++	clock-frequency = <400000>;
++
++	status = "okay";
++};
++
++/* USB-C port 1: Samsung S2MM006 PD controller at 0x33 (on the 14", ACPI EMEC IC16) */
++&i2c15 {
++	clock-frequency = <400000>;
++
++	status = "okay";
+ };
+ 
+ &lpass_tlmm {

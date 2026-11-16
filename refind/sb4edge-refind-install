@@ -1,0 +1,33 @@
+#!/bin/sh
+# Installs/refreshes rEFInd + the sb4edge theme on the installed system's EFI partition and keeps it first in the
+# firmware boot order (GRUB updates may move "ubuntu" back to the front). Runs every boot (sb4edge-refind.service);
+# does nothing in the live session. Only files under EFI/refind and the rEFInd NVRAM boot entry are touched.
+set -e
+[ -d /rofs ] && exit 0
+ESP=/boot/efi; SRC=/usr/lib/sb4edge/refind; DST=$ESP/EFI/refind
+mountpoint -q "$ESP" || { echo "no EFI partition at $ESP"; exit 0; }
+[ -f "$ESP/EFI/ubuntu/shimaa64.efi" ] || { echo "EFI/ubuntu/shimaa64.efi missing, leaving the boot order alone"; exit 0; }
+mkdir -p "$DST/themes"
+cmp -s "$SRC/refind_aa64.efi" "$DST/refind_aa64.efi" || cp "$SRC/refind_aa64.efi" "$DST/refind_aa64.efi"
+if ! diff -rq "$SRC/themes/sb4edge" "$DST/themes/sb4edge" >/dev/null 2>&1; then
+    rm -rf "$DST/themes/sb4edge"; cp -r "$SRC/themes/sb4edge" "$DST/themes/sb4edge"
+fi
+if [ ! -f "$DST/refind.conf" ] || grep -q '^# sb4edge-managed' "$DST/refind.conf"; then
+    cmp -s "$SRC/refind.conf" "$DST/refind.conf" || cp "$SRC/refind.conf" "$DST/refind.conf"
+fi
+# GRUB package updates must not re-add/reorder NVRAM entries (rEFInd launches shim by path)
+echo "grub2 grub2/update_nvram boolean false" | debconf-set-selections 2>/dev/null || true
+command -v efibootmgr >/dev/null || exit 0
+num() { efibootmgr | awk '/^Boot[0-9A-Fa-f]{4}\*? rEFInd/ {print substr($1,5,4); exit}'; }
+N=$(num)
+if [ -z "$N" ]; then
+    DEV=$(findmnt -no SOURCE "$ESP"); DISK=/dev/$(lsblk -no PKNAME "$DEV"); PART=$(cat "/sys/class/block/$(basename "$DEV")/partition")
+    efibootmgr -q -c -d "$DISK" -p "$PART" -L rEFInd -l '\EFI\refind\refind_aa64.efi'
+    N=$(num); echo "created boot entry Boot$N (rEFInd)"
+fi
+ORDER=$(efibootmgr | awk -F': ' '/^BootOrder/ {print $2}')
+case "$ORDER" in
+    "$N"|"$N",*) ;;
+    *) REST=$(echo "$ORDER" | tr ',' '\n' | grep -vx "$N" | paste -sd, -)
+       efibootmgr -q -o "$N${REST:+,$REST}"; echo "rEFInd moved to the front of BootOrder" ;;
+esac

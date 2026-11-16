@@ -1,0 +1,4 @@
+# Ambient light sensor behind the ADSP (Qualcomm SSC), read by iio-sensor-proxy through libssc.
+ACTION=="remove", GOTO="sb4edge_ssc_end"
+SUBSYSTEM=="misc", KERNEL=="fastrpc-adsp", ENV{IIO_SENSOR_PROXY_TYPE}+="ssc-light", TAG+="systemd", ENV{SYSTEMD_WANTS}+="iio-sensor-proxy.service"
+LABEL="sb4edge_ssc_end"

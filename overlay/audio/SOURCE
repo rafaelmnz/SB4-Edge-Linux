@@ -1,0 +1,14 @@
+From omarchy (hegjon) gb4e/, research/omarchy-full:
+  X1E80100-GalaxyBook4Edge-tplg.bin   ADSP topology (the X1E80100 devkit topology under the name the
+                                      machine driver requests from the DT model "X1E80100-GalaxyBook4Edge")
+  ucm/*.conf                          four-speaker WSA883x UCM, derived from alsa-ucm-conf Qualcomm/x1e80100
+  62-sb4edge-wsa883x.rules            keeps the WSA883x amps runtime-active (shared reset line, -EBUSY on resume)
+  50-sb4edge-upmix.conf               PipeWire simple upmix, so woofers (RL/RR) get centred sound
+Only comments changed (14" -> both sizes).
+
+sb4edge: HeadphoneABEnableSeq.conf added locally (missing from Ubuntu alsa-ucm-conf 1.2.15.3); HiFi.conf includes it from /Samsung/GalaxyBook4Edge.
+
+sb4edge (2026-11-15): X1E80100-GalaxyBook4Edge-tplg.bin is now built from source: fluence/tplg/build-sb4edge.sh
+(audioreach-topology X1E80100-CRD + MultiMedia8 = internal mics -> Samsung IIR EQ -> Fluence NN NS, Samsung ACDB
+calibration). The Omarchy original is kept as fluence/tplg/omarchy-orig-tplg.bin. fluence/ holds the Fluence service,
+its README and the PipeWire source (61-sb4edge-fluence.conf).

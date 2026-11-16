@@ -1,0 +1,22 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * OPTIONAL, not applied: the X1 "idle crash / firmware bug" workaround as carried by zensanp's 6.19 tree
+ * (jglathe patches, Launchpad #2084591 comment 149): no CL5 cluster idle state and no SS3 system idle state.
+ * Costs idle power (battery life); use only if the 16" freezes or reboots while idle.
+ * Apply: copy next to the 16" dts and add  #include "x1-samsung-galaxy-book4-edge-idle.dtsi"  at its end.
+ */
+&cluster_pd0 {
+	domain-idle-states = <&cluster_cl4>;
+};
+
+&cluster_pd1 {
+	domain-idle-states = <&cluster_cl4>;
+};
+
+&cluster_pd2 {
+	domain-idle-states = <&cluster_cl4>;
+};
+
+&system_pd {
+	/delete-property/ domain-idle-states;
+};

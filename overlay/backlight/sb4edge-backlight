@@ -1,0 +1,62 @@
+#!/bin/sh
+# Remembers the panel and keyboard backlight levels chosen in the user session.
+#
+# systemd-backlight saves both at shutdown and restores them at boot, but what it saves is whatever is set at that
+# moment, e.g. the login screen's idle dim (panel at 30%, keyboard off). So:
+#
+# "watch": runs as a service and records each level in /var/lib/sb4edge/backlight/<subsystem>:<name> (named like the
+#          systemd-backlight@ instance), but only while the active seat0 session is an unlocked, non-idle user
+#          session (so not the greeter, the lock screen or an idle-dimmed screen).
+# "commit": runs from systemd-backlight's ExecStopPost and writes the recorded level over what it just saved.
+set -u
+STATE=/var/lib/sb4edge/backlight
+SYSD=/var/lib/systemd/backlight
+
+user_active() {
+	s=$(loginctl show-seat seat0 -p ActiveSession --value 2>/dev/null) || return 1
+	[ -n "$s" ] || return 1
+	[ "$(loginctl show-session "$s" -p Class --value 2>/dev/null)" = user ] || return 1
+	[ "$(loginctl show-session "$s" -p LockedHint --value 2>/dev/null)" = no ] || return 1
+	[ "$(loginctl show-session "$s" -p IdleHint --value 2>/dev/null)" = no ]
+}
+
+# $1 sysfs dir, $2 state name, $3 lowest level worth keeping (the panel is never saved off, the keyboard may be)
+record() {
+	v=$(cat "$1/brightness" 2>/dev/null) || return 0
+	case "$v" in '' | *[!0-9]*) return 0 ;; esac
+	[ "$v" -ge "$3" ] || return 0
+	[ "$v" = "$(cat "$STATE/$2" 2>/dev/null)" ] && return 0
+	printf '%s\n' "$v" >"$STATE/$2.tmp" && mv "$STATE/$2.tmp" "$STATE/$2"
+}
+
+case "${1:-}" in
+watch)
+	mkdir -p "$STATE"
+	while :; do
+		if user_active; then
+			for b in /sys/class/backlight/*; do
+				[ -r "$b/brightness" ] && record "$b" "backlight:${b##*/}" 1
+			done
+			# Not while sb4edge-kbd-ambient has switched the keyboard off for bright light (not the user's choice).
+			ls /run/user/*/sb4edge-kbd-auto-off >/dev/null 2>&1 ||
+			for b in /sys/class/leds/*::kbd_backlight; do
+				[ -r "$b/brightness" ] && record "$b" "leds:${b##*/}" 0
+			done
+		fi
+		sleep 3
+	done
+	;;
+commit)
+	# $2: the systemd-backlight instance, e.g. "backlight:dp_aux_backlight" or "leds:samsung-galaxybook::kbd_backlight"
+	case "${2:-}" in backlight:* | leds:*) ;; *) exit 0 ;; esac
+	[ -s "$STATE/$2" ] || exit 0
+	for f in "$SYSD"/*":$2"; do
+		[ -e "$f" ] && cp "$STATE/$2" "$f"
+	done
+	exit 0
+	;;
+*)
+	echo "usage: $0 watch | commit <systemd-backlight instance>" >&2
+	exit 2
+	;;
+esac

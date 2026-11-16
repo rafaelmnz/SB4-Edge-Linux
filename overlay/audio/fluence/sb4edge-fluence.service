@@ -1,0 +1,18 @@
+[Unit]
+Description=Audio DSP helper for Fluence voice processing (Microphone (Fluence))
+Documentation=file:///usr/lib/sb4edge/fluence/README
+# The ADSP loads Samsung's Fluence modules (from the Windows driver package) through this FastRPC listener
+# when the MultiMedia8 capture graph opens. Without it only "Microphone (Fluence)" fails; the other mics work.
+ConditionPathExists=/usr/lib/sb4edge/fluence/adsprpcd
+
+[Service]
+Environment=LD_LIBRARY_PATH=/usr/lib/sb4edge/fluence/lib
+Environment=ADSP_LIBRARY_PATH=/usr/lib/sb4edge/fluence/adsp
+# /dev/fastrpc-adsp appears once the ADSP remoteproc has booted; retry until then.
+ExecStartPre=/bin/sh -c 'for i in $(seq 60); do [ -e /dev/fastrpc-adsp ] && exit 0; sleep 1; done; exit 1'
+ExecStart=/usr/lib/sb4edge/fluence/adsprpcd audiopd
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

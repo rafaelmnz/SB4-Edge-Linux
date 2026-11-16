@@ -1,0 +1,11 @@
+/dts-v1/;
+/plugin/;
+/* Keyboard backlight: the EC's command port at 0x62 on i2c5 (0xb94000). */
+&i2c5 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	kbd-backlight@62 {
+		compatible = "samsung,galaxy-book4-edge-kbd-backlight";
+		reg = <0x62>;
+	};
+};

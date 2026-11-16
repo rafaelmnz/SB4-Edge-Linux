@@ -1,0 +1,348 @@
+Description: GPU page for Qualcomm Adreno (msm) GPUs
+ The msm DRM card is a platform device (no PCI ID, no gpu_busy_percent, no hwmon), so Resources showed an
+ unnamed "GPU" page with no data. New msm backend: name from the Adreno chip id, total usage from the msm
+ DRM fdinfo counters, clock from devfreq, temperature from the gpuss thermal zones, shared memory in use
+ against MemTotal. Per-process GPU usage/memory now also covers msm clients.
+Author: sb4edge-linux
+diff --color -ruN -x . resources-orig/lib/process_data/src/lib.rs resources/lib/process_data/src/lib.rs
+diff --color -ruN -x . resources-orig/lib/process_data/src/lib.rs resources/lib/process_data/src/lib.rs
+--- a/lib/process_data/src/lib.rs	2026-11-15 09:10:14
++++ b/lib/process_data/src/lib.rs	2026-11-15 09:12:16
+@@ -73,6 +73,7 @@
+     HashMap::from_iter([
+         ("amdgpu", vec!["drm-engine-compute", "drm-engine-gfx"]),
+         ("i915", vec!["drm-engine-render"]),
++        ("msm", vec!["drm-engine-gpu"]),
+         ("v3d", vec!["drm-engine-render"]),
+     ])
+ });
+@@ -113,6 +114,7 @@
+         ("amdgpu", vec!["drm-memory-gtt", "drm-memory-vram"]),
+         ("amdxdna_accel_driver", vec!["drm-total-memory"]),
+         ("i915", vec!["drm-total-local0", "drm-total-system0"]),
++        ("msm", vec!["drm-resident-memory"]),
+         ("v3d", vec!["drm-total-memory"]),
+         ("xe", vec!["drm-total-gtt", "drm-total-vram0"]),
+     ])
+@@ -765,7 +767,7 @@
+                         .map(|names| Self::parse_drm_fields(fdinfo, names, &RE_DRM_TIME))
+                         .unwrap_or_default(),
+                 },
+-                "v3d" => GpuUsageStats::V3dStats {
++                "v3d" | "msm" => GpuUsageStats::V3dStats {
+                     gfx_ns: GFX_NS_DRM_FIELDS
+                         .get(driver.as_str())
+                         .map(|names| Self::parse_drm_fields(fdinfo, names, &RE_DRM_TIME))
+diff --color -ruN -x . resources-orig/src/utils/gpu/mod.rs resources/src/utils/gpu/mod.rs
+--- a/src/utils/gpu/mod.rs	2026-11-15 09:10:14
++++ b/src/utils/gpu/mod.rs	2026-11-15 09:12:16
+@@ -1,5 +1,6 @@
+ mod amd;
+ mod intel;
++mod msm;
+ mod nvidia;
+ mod other;
+ mod v3d;
+@@ -8,6 +9,7 @@
+ use lazy_regex::{Lazy, Regex, lazy_regex};
+ use log::{debug, info, trace};
+ use process_data::{gpu_usage::GpuIdentifier, pci_slot::PciSlot};
++use msm::MsmGpu;
+ use v3d::V3dGpu;
+ 
+ use std::{
+@@ -120,6 +122,7 @@
+     Intel(IntelGpu),
+     Nvidia(NvidiaGpu),
+     V3d(V3dGpu),
++    Msm(MsmGpu),
+     Other(OtherGpu),
+ }
+ 
+@@ -212,6 +215,7 @@
+             Gpu::Intel(gpu) => gpu,
+             Gpu::Nvidia(gpu) => gpu,
+             Gpu::V3d(gpu) => gpu,
++            Gpu::Msm(gpu) => gpu,
+             Gpu::Other(gpu) => gpu,
+         }
+     }
+@@ -337,6 +341,18 @@
+                     hwmon_vec.first().cloned(),
+                 )),
+                 "v3d",
++            )
++        } else if (driver == "msm_dpu" || driver == "msm") && MsmGpu::is_present() {
++            // msm fdinfo has no drm-pdev, so per-process stats land on the default identifier; use it here too
++            (
++                Gpu::Msm(MsmGpu::new(
++                    device,
++                    GpuIdentifier::default(),
++                    driver,
++                    path.to_path_buf(),
++                    hwmon_vec.first().cloned(),
++                )),
++                "msm",
+             )
+         } else {
+             (
+diff --color -ruN -x . resources-orig/src/utils/gpu/msm.rs resources/src/utils/gpu/msm.rs
+--- a/src/utils/gpu/msm.rs	1969-12-31 19:00:00
++++ b/src/utils/gpu/msm.rs	2026-11-15 09:16:41
+@@ -0,0 +1,256 @@
++// Qualcomm Adreno GPUs driven by the upstream msm DRM driver (Snapdragon X Elite/Plus laptops, etc.).
++//
++// msm is a platform device: no PCI ID, no gpu_busy_percent, no hwmon. The values come from
++//   - DRM fdinfo (drm-engine-gpu / drm-resident-memory) of every process the user can read: total usage,
++//     memory in use (system RAM is shared with the GPU, so the total is MemTotal),
++//   - the GPU's devfreq node (current clock),
++//   - the gpuss-* thermal zones (hottest one),
++//   - the Adreno chip id in the device tree (name).
++
++use anyhow::{Context, Result, bail};
++use process_data::gpu_usage::GpuIdentifier;
++
++use std::{
++    collections::HashMap,
++    fs,
++    path::{Path, PathBuf},
++    sync::{Arc, Mutex},
++    time::Instant,
++};
++
++use crate::utils::{pci::Device, read_parsed};
++
++use super::GpuImpl;
++
++const DEVFREQ_GLOB: &str = "/sys/class/devfreq/*.gpu";
++
++#[derive(Debug, Clone, Default)]
++pub struct MsmGpu {
++    pub device: Option<&'static Device>,
++    pub gpu_identifier: GpuIdentifier,
++    pub driver: String,
++    sysfs_path: PathBuf,
++    first_hwmon_path: Option<PathBuf>,
++    last_sample: Arc<Mutex<Option<(Instant, u64)>>>,
++}
++
++#[derive(Default)]
++struct FdinfoTotals {
++    gpu_ns: u64,
++    resident_bytes: u64,
++}
++
++impl MsmGpu {
++    pub fn new(
++        device: Option<&'static Device>,
++        gpu_identifier: GpuIdentifier,
++        driver: String,
++        sysfs_path: PathBuf,
++        first_hwmon_path: Option<PathBuf>,
++    ) -> Self {
++        Self {
++            device,
++            gpu_identifier,
++            driver,
++            sysfs_path,
++            first_hwmon_path,
++            last_sample: Arc::new(Mutex::new(None)),
++        }
++    }
++
++    /// The card's DRM device is the display controller; the GPU is a separate platform device. Only treat the card
++    /// as an Adreno GPU if the msm driver also registered the GPU (it has a devfreq node).
++    pub fn is_present() -> bool {
++        Self::devfreq_path().is_some()
++    }
++
++    fn devfreq_path() -> Option<PathBuf> {
++        glob::glob(DEVFREQ_GLOB).ok()?.flatten().next()
++    }
++
++    fn parse_value(line: &str) -> Option<u64> {
++        let value = line.split_once(':')?.1.trim();
++        let mut parts = value.split_whitespace();
++        let number: u64 = parts.next()?.parse().ok()?;
++        let factor = match parts.next() {
++            Some("KiB" | "kB") => 1024,
++            Some("MiB") => 1024 * 1024,
++            Some("GiB") => 1024 * 1024 * 1024,
++            _ => 1,
++        };
++        Some(number.saturating_mul(factor))
++    }
++
++    /// Sums the counters of all msm DRM clients the user can see. A client opened several times (dup'd fds,
++    /// forks) shares one drm-client-id, so each id is counted once.
++    fn fdinfo_totals() -> FdinfoTotals {
++        let mut clients: HashMap<u64, (u64, u64)> = HashMap::new();
++
++        let Ok(procs) = fs::read_dir("/proc") else {
++            return FdinfoTotals::default();
++        };
++
++        for proc_entry in procs.flatten() {
++            let name = proc_entry.file_name();
++            if !name.to_string_lossy().bytes().all(|b| b.is_ascii_digit()) {
++                continue;
++            }
++            let Ok(fdinfos) = fs::read_dir(proc_entry.path().join("fdinfo")) else {
++                continue;
++            };
++            for fdinfo in fdinfos.flatten() {
++                let Ok(content) = fs::read_to_string(fdinfo.path()) else {
++                    continue;
++                };
++                if !content.contains("drm-driver:\tmsm") {
++                    continue;
++                }
++                let (mut id, mut ns, mut resident) = (None, 0, 0);
++                for line in content.lines() {
++                    if line.starts_with("drm-client-id:") {
++                        id = Self::parse_value(line);
++                    } else if line.starts_with("drm-engine-gpu:") {
++                        ns = Self::parse_value(line).unwrap_or_default();
++                    } else if line.starts_with("drm-resident-memory:") {
++                        resident = Self::parse_value(line).unwrap_or_default();
++                    }
++                }
++                if let Some(id) = id {
++                    clients.insert(id, (ns, resident));
++                }
++            }
++        }
++
++        clients
++            .values()
++            .fold(FdinfoTotals::default(), |acc, (ns, resident)| FdinfoTotals {
++                gpu_ns: acc.gpu_ns + ns,
++                resident_bytes: acc.resident_bytes + resident,
++            })
++    }
++
++    fn chip_name() -> Option<String> {
++        for entry in glob::glob("/sys/class/devfreq/*.gpu/device/of_node/compatible")
++            .ok()?
++            .flatten()
++        {
++            let compatible = fs::read(entry).ok()?;
++            for item in compatible.split(|b| *b == 0) {
++                let item = String::from_utf8_lossy(item);
++                if let Some(chip_id) = item.strip_prefix("qcom,adreno-") {
++                    let name = match chip_id {
++                        "43050a01" | "43050c01" => "Adreno X1-85",
++                        "43050b00" => "Adreno X1-45",
++                        _ => return Some(format!("Qualcomm Adreno ({chip_id})")),
++                    };
++                    return Some(format!("Qualcomm {name}"));
++                }
++            }
++        }
++        None
++    }
++}
++
++impl GpuImpl for MsmGpu {
++    fn device(&self) -> Option<&'static Device> {
++        self.device
++    }
++
++    fn gpu_identifier(&self) -> GpuIdentifier {
++        self.gpu_identifier
++    }
++
++    fn driver(&self) -> &str {
++        &self.driver
++    }
++
++    fn sysfs_path(&self) -> &Path {
++        &self.sysfs_path
++    }
++
++    fn first_hwmon(&self) -> Option<&Path> {
++        self.first_hwmon_path.as_deref()
++    }
++
++    fn name(&self) -> Result<String> {
++        Self::chip_name().context("no Adreno compatible string")
++    }
++
++    fn usage(&self) -> Result<f64> {
++        let now = Instant::now();
++        let gpu_ns = Self::fdinfo_totals().gpu_ns;
++        let mut last = self.last_sample.lock().unwrap();
++        let previous = last.replace((now, gpu_ns));
++        let (then, old_ns) = previous.context("first sample")?;
++        let elapsed = now.duration_since(then).as_nanos() as f64;
++        if elapsed <= 0.0 {
++            bail!("no time elapsed");
++        }
++        // clients that went away make the sum drop; treat that interval as unknown rather than negative
++        let busy = gpu_ns.checked_sub(old_ns).context("client set changed")? as f64;
++        Ok(busy / elapsed)
++    }
++
++    fn encode_usage(&self) -> Result<f64> {
++        bail!("encode usage not implemented for msm")
++    }
++
++    fn decode_usage(&self) -> Result<f64> {
++        bail!("decode usage not implemented for msm")
++    }
++
++    fn combined_media_engine(&self) -> Result<bool> {
++        Ok(true)
++    }
++
++    fn used_vram(&self) -> Result<u64> {
++        Ok(Self::fdinfo_totals().resident_bytes)
++    }
++
++    fn total_vram(&self) -> Result<u64> {
++        let meminfo = fs::read_to_string("/proc/meminfo")?;
++        meminfo
++            .lines()
++            .find(|line| line.starts_with("MemTotal:"))
++            .and_then(Self::parse_value)
++            .context("no MemTotal")
++    }
++
++    fn temperature(&self) -> Result<f64> {
++        let mut hottest: Option<f64> = None;
++        for zone in glob::glob("/sys/class/thermal/thermal_zone*")?.flatten() {
++            let Ok(zone_type) = fs::read_to_string(zone.join("type")) else {
++                continue;
++            };
++            if !zone_type.starts_with("gpu") {
++                continue;
++            }
++            if let Ok(millicelsius) = read_parsed::<f64>(zone.join("temp")) {
++                let celsius = millicelsius / 1000.0;
++                hottest = Some(hottest.map_or(celsius, |h| h.max(celsius)));
++            }
++        }
++        hottest.context("no GPU thermal zone")
++    }
++
++    fn power_usage(&self) -> Result<f64> {
++        bail!("power usage not available for msm")
++    }
++
++    fn core_frequency(&self) -> Result<f64> {
++        let devfreq = Self::devfreq_path().context("no GPU devfreq")?;
++        read_parsed::<f64>(devfreq.join("cur_freq"))
++    }
++
++    fn vram_frequency(&self) -> Result<f64> {
++        bail!("memory frequency not available for msm")
++    }
++
++    fn power_cap(&self) -> Result<f64> {
++        bail!("power cap not available for msm")
++    }
++
++    fn power_cap_max(&self) -> Result<f64> {
++        bail!("power cap not available for msm")
++    }
++}

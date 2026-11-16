@@ -1,0 +1,2 @@
+From https://github.com/hegjon/omarchy-galaxy-book4-edge gb4e/samsung-galaxy-book4-edge-usbc/usbc.c (GPL-2.0).
+Modified for sb4edge: a port already powered at start is no longer switched off (it disconnected a live USB stick on a USB-C port).

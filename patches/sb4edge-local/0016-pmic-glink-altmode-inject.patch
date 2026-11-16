@@ -1,0 +1,131 @@
+diff --git a/drivers/soc/qcom/pmic_glink_altmode.c b/drivers/soc/qcom/pmic_glink_altmode.c
+index 9fd077737..cbc35e39e 100644
+--- a/drivers/soc/qcom/pmic_glink_altmode.c
++++ b/drivers/soc/qcom/pmic_glink_altmode.c
+@@ -121,6 +121,8 @@ struct pmic_glink_altmode_port {
+ 	u8 hpd_state;
+ 	u8 hpd_irq;
+ 	u8 mux_ctrl;
++	/* sb4edge: state set from userspace, not by the ADSP: no PAN_ACK */
++	bool injected;
+ };
+ 
+ #define work_to_altmode(w) container_of((w), struct pmic_glink_altmode, enable_work)
+@@ -390,7 +392,10 @@ static void pmic_glink_altmode_worker(struct work_struct *work)
+ 		pmic_glink_altmode_safe(altmode, alt_port);
+ 	}
+ 
+-	pmic_glink_altmode_request(altmode, ALTMODE_PAN_ACK, alt_port->index);
++	if (alt_port->injected)
++		alt_port->injected = false;
++	else
++		pmic_glink_altmode_request(altmode, ALTMODE_PAN_ACK, alt_port->index);
+ }
+ 
+ static enum typec_orientation pmic_glink_altmode_orientation(unsigned int orientation)
+@@ -505,6 +510,90 @@ static void pmic_glink_altmode_sc8280xp_notify(struct pmic_glink_altmode *altmod
+ 	queue_work(system_freezable_wq, &alt_port->work);
+ }
+ 
++/*
++ * sb4edge: on the Samsung Galaxy Book4 Edge the USB-C ports have Samsung S2MM006 PD controllers that talk to
++ * Windows' EmuEC.sys, not to the ADSP, so no USBC_NOTIFY_IND ever arrives. The usbc helper reads the alt mode
++ * state from the controllers and hands it in here, so the mux, retimer and DP HPD bridge follow it:
++ *
++ *   echo "<port> <normal|reverse|none> safe" > inject
++ *   echo "<port> <normal|reverse|none> usb" > inject
++ *   echo "<port> <normal|reverse|none> dp <A-F> <hpd 0|1> <irq 0|1>" > inject
++ */
++static ssize_t inject_store(struct device *dev, struct device_attribute *attr,
++			    const char *buf, size_t count)
++{
++	struct pmic_glink_altmode *altmode = dev_get_drvdata(dev);
++	struct pmic_glink_altmode_port *alt_port;
++	char orient[8], state[8], pin = 0;
++	unsigned int port, hpd = 0, irq = 0;
++	enum typec_orientation orientation;
++	int n;
++
++	n = sscanf(buf, "%u %7s %7s %c %u %u", &port, orient, state, &pin, &hpd, &irq);
++	if (n < 3 || port >= ARRAY_SIZE(altmode->ports) || !altmode->ports[port].altmode)
++		return -EINVAL;
++	alt_port = &altmode->ports[port];
++
++	flush_work(&alt_port->work);
++	if (!strcmp(orient, "normal"))
++		orientation = TYPEC_ORIENTATION_NORMAL;
++	else if (!strcmp(orient, "reverse"))
++		orientation = TYPEC_ORIENTATION_REVERSE;
++	else if (!strcmp(orient, "none"))
++		orientation = TYPEC_ORIENTATION_NONE;
++	else
++		return -EINVAL;
++
++	if (!strcmp(state, "dp")) {
++		u8 mux;
++
++		if (n < 6 || pin < 'A' || pin > 'F')
++			return -EINVAL;
++		mux = (pin == 'D' || pin == 'F') ? MUX_CTRL_STATE_USB3_DP : MUX_CTRL_STATE_DP4LN;
++		/*
++		 * Lanes already in this DP mode: only pass the HPD change on. Setting the mux and retimer
++		 * again resets the AUX path for a moment, and msm reads the sink count and EDID right
++		 * after the HPD notification.
++		 */
++		if (alt_port->svid == USB_TYPEC_DP_SID && alt_port->mux_ctrl == mux &&
++		    alt_port->mode == pin - 'A' && alt_port->orientation == orientation) {
++			alt_port->hpd_state = !!hpd;
++			alt_port->hpd_irq = !!irq;
++			drm_aux_hpd_bridge_notify(&alt_port->bridge->dev, hpd ? connector_status_connected :
++						  connector_status_disconnected);
++			return count;
++		}
++		alt_port->svid = USB_TYPEC_DP_SID;
++		alt_port->mux_ctrl = mux;
++		alt_port->mode = pin - 'A';
++		alt_port->hpd_state = !!hpd;
++		alt_port->hpd_irq = !!irq;
++	} else if (!strcmp(state, "usb")) {
++		alt_port->svid = 0;
++		alt_port->mux_ctrl = MUX_CTRL_STATE_USB3_ONLY;
++	} else if (!strcmp(state, "safe")) {
++		/* a DP partner that went away still needs its HPD dropped */
++		if (alt_port->svid == USB_TYPEC_DP_SID)
++			alt_port->hpd_state = 0;
++		alt_port->mux_ctrl = MUX_CTRL_STATE_NO_CONN;
++	} else {
++		return -EINVAL;
++	}
++	alt_port->orientation = orientation;
++	alt_port->injected = true;
++	queue_work(system_freezable_wq, &alt_port->work);
++	flush_work(&alt_port->work);
++	if (!strcmp(state, "safe"))
++		alt_port->svid = 0;
++	return count;
++}
++static DEVICE_ATTR_WO(inject);
++
++static void pmic_glink_altmode_remove_inject(void *data)
++{
++	device_remove_file(data, &dev_attr_inject);
++}
++
+ static void pmic_glink_altmode_callback(const void *data, size_t len, void *priv)
+ {
+ 	struct pmic_glink_altmode *altmode = priv;
+@@ -687,6 +776,14 @@ static int pmic_glink_altmode_probe(struct auxiliary_device *adev,
+ 			return ret;
+ 	}
+ 
++	dev_set_drvdata(dev, altmode);
++	ret = device_create_file(dev, &dev_attr_inject);
++	if (ret)
++		return ret;
++	ret = devm_add_action_or_reset(dev, pmic_glink_altmode_remove_inject, dev);
++	if (ret)
++		return ret;
++
+ 	altmode->client = devm_pmic_glink_client_alloc(dev,
+ 						       altmode->owner_id,
+ 						       pmic_glink_altmode_callback,

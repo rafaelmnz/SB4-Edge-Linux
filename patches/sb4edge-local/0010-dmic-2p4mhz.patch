@@ -1,0 +1,15 @@
+--- a/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge.dtsi	2026-11-15 00:36:07.488301053 +0000
++++ b/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge.dtsi	2026-11-15 00:36:07.488971053 +0000
+@@ -985,7 +985,11 @@
+ 	pinctrl-names = "default";
+ 
+ 	vdd-micb-supply = <&vreg_l1b_1p8>;
+-	qcom,dmic-sample-rate = <4800000>;
++	/*
++	 * 2.4 MHz, as the 15.6" Book4 Edge uses: at 4.8 MHz DMIC0 (rising edge of data line 0)
++	 * captures broadband noise at about -16 dBFS; at 2.4 MHz it is as clean as DMIC1 (-68 dBFS idle).
++	 */
++	qcom,dmic-sample-rate = <2400000>;
+ };
+ 
+ &mdss {

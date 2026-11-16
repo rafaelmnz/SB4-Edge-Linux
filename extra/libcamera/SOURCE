@@ -1,0 +1,7 @@
+From ciscobugger/book4-edge-linux userspace/camera (15.6" NP750XQA, same OV02C10 on CCI0/CSIPHY0):
+  0001-ipa-libipa-add-ov02c10-camera-sensor-helper.patch  applied to Ubuntu's libcamera 0.7.0 source (build.sh)
+  ov02c10.yaml        soft-ISP tuning -> /usr/share/libcamera/ipa/simple/ov02c10.yaml (gamma/contrast keys need
+                      their 0002 Adjust patch, which is not applied; libcamera ignores those keys)
+  configuration.yaml  software_isp mode cpu (GPU path gives no stats -> no AE) -> /etc/libcamera/configuration.yaml? see
+                      remaster.sh for the path used
+  52-sb4edge-hide-raw-camss.conf  WirePlumber rule hiding the raw CAMSS V4L2 nodes (match widened to any acbXXXX isp)

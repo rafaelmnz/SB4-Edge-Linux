@@ -1,0 +1,24 @@
+#!/bin/sh
+# Adds "Microphone (Fluence)" (topology MultiMedia8, hw:X1E80100GalaxyB,7) to the running PipeWire once the sound card
+# exists. Not in pipewire.conf.d: an ALSA node in context.objects is opened at daemon start, before the card is up, and
+# its failure kills PipeWire (and with it the desktop portal: apps hang). Run by sb4edge-fluence-source.service (user).
+for i in $(seq 120); do [ -e /proc/asound/X1E80100GalaxyB/pcm7c ] && break; sleep 1; done
+[ -e /proc/asound/X1E80100GalaxyB/pcm7c ] || { echo "no MultiMedia8 capture device"; exit 0; }
+for i in $(seq 60); do systemctl is-active -q sb4edge-fluence.service && break; sleep 1; done
+for i in $(seq 30); do pw-cli info 0 >/dev/null 2>&1 && break; sleep 1; done
+pw-cli ls Node 2>/dev/null | grep -q 'node.name = "sb4edge_fluence"' && exit 0
+exec pw-cli create-node adapter '{
+  factory.name = "api.alsa.pcm.source"
+  node.name = "sb4edge_fluence"
+  node.description = "Microphone (Fluence)"
+  media.class = "Audio/Source"
+  api.alsa.path = "hw:X1E80100GalaxyB,7"
+  audio.format = "S16LE"
+  audio.rate = 16000
+  audio.channels = 2
+  audio.position = [ FL FR ]
+  priority.session = 3500
+  priority.driver = 3500
+  node.pause-on-idle = true
+  object.linger = true
+}'

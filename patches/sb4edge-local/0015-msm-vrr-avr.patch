@@ -1,0 +1,351 @@
+sb4edge: variable refresh (VRR) for the eDP panel on X1E80100 through the DPU INTF AVR block
+(the timing-engine half of Qualcomm's downstream "Qsync", sde_hw_intf.c avr_setup/avr_ctrl/avr_trigger).
+Off unless msm.vrr=1|2 (with VRR_ENABLED, continuous|one-shot) or 3 (always): the eDP connector gets vrr_capable (DPCD
+MSA_TIMING_PAR_IGNORED + EDID range), the sink is told to ignore MSA timing, and while the compositor sets
+VRR_ENABLED the INTF stretches the front porch up to the EDID minimum refresh and each flushed frame triggers
+the next one. Scanout position is clamped during the extended porch for vblank timestamps.
+
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_crtc.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_crtc.c
+@@ -303,6 +303,13 @@
+ 
+ 	line = dpu_encoder_get_linecount(encoder);
+ 
++	/*
++	 * sb4edge: with variable refresh (AVR) the front porch runs past VTOTAL until the next frame is triggered;
++	 * report such lines as the end of the nominal front porch (the next frame may start at any moment).
++	 */
++	if (line > vfp_end)
++		line = vfp_end;
++
+ 	if (line < vactive_start)
+ 		line -= vactive_start;
+ 	else if (line > vactive_end)
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
+@@ -36,6 +36,18 @@
+ #include "dpu_core_irq.h"
+ #include "disp/msm_disp_snapshot.h"
+ 
++/*
++ * sb4edge: variable refresh (AVR) on eDP video mode. Read by the DP connector code as well (msm_vrr_mode).
++ *  0 = off (no vrr_capable property, nothing changes)
++ *  1 = AVR (continuous) while the compositor sets VRR_ENABLED (GNOME: fullscreen windows only)
++ *  2 = same, AVR one-shot mode
++ *  3 = AVR (continuous) whenever the panel is VRR capable: every commit starts a frame at once (up to the mode's
++ *      refresh), and with no commits the panel drops to the EDID minimum ("desktop" VRR)
++ */
++int msm_vrr_mode;
++module_param_named(vrr, msm_vrr_mode, int, 0444);
++MODULE_PARM_DESC(vrr, "sb4edge: eDP variable refresh: 0 off, 1 when VRR_ENABLED, 2 same one-shot, 3 always");
++
+ #define DPU_DEBUG_ENC(e, fmt, ...) DRM_DEBUG_ATOMIC("enc%d " fmt,\
+ 		(e) ? (e)->base.base.id : -1, ##__VA_ARGS__)
+ 
+@@ -2098,6 +2110,35 @@
+ 
+ 	if (dpu_enc->dsc)
+ 		dpu_encoder_prep_dsc(dpu_enc, dpu_enc->dsc);
++}
++
++/**
++ * dpu_encoder_get_vrr_min_fps - sb4edge: minimum refresh for AVR, or 0 when VRR is not in use
++ * @drm_enc: encoder
++ *
++ * Non-zero only when msm.vrr is set, the CRTC has VRR_ENABLED and the connector reports
++ * vrr_capable with an EDID refresh range (display_info.monitor_range).
++ */
++u32 dpu_encoder_get_vrr_min_fps(struct drm_encoder *drm_enc)
++{
++	struct dpu_encoder_virt *dpu_enc = to_dpu_encoder_virt(drm_enc);
++	struct drm_connector *conn = dpu_enc->connector;
++	struct drm_object_properties *props;
++	u64 capable = 0;
++	int i;
++
++	if (!msm_vrr_mode || !conn || !conn->vrr_capable_property || !drm_enc->crtc || !drm_enc->crtc->state)
++		return 0;
++	if (msm_vrr_mode != 3 && !drm_enc->crtc->state->vrr_enabled)
++		return 0;
++	/* vrr_capable is immutable: its value lives in the object's property list (no atomic state) */
++	props = conn->base.properties;
++	for (i = 0; props && i < props->count; i++)
++		if (props->properties[i] == conn->vrr_capable_property)
++			capable = props->values[i];
++	if (!capable)
++		return 0;
++	return conn->display_info.monitor_range.min_vfreq;
+ }
+ 
+ /**
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.h
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.h
+@@ -97,5 +97,7 @@
+ 
+ bool dpu_encoder_is_valid_for_commit(struct drm_encoder *drm_enc);
+ 
++u32 dpu_encoder_get_vrr_min_fps(struct drm_encoder *drm_enc);
++
+ void dpu_encoder_start_frame_done_timer(struct drm_encoder *drm_enc);
+ #endif /* __DPU_ENCODER_H__ */
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys.h
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys.h
+@@ -185,6 +185,7 @@
+ 	struct dpu_kms *dpu_kms;
+ 	struct dpu_hw_cdm_cfg cdm_cfg;
+ 	struct drm_display_mode cached_mode;
++	u32 avr_mode;		/* sb4edge: AVR mode programmed in the INTF */
+ 	struct mutex vblank_ctl_lock;
+ 	enum dpu_enc_split_role split_role;
+ 	enum dpu_intf_mode intf_mode;
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys_vid.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys_vid.c
+@@ -327,11 +327,56 @@
+ 	if (phys_enc->hw_pp->merge_3d)
+ 		phys_enc->hw_pp->merge_3d->ops.setup_3d_mode(phys_enc->hw_pp->merge_3d, intf_cfg.mode_3d);
+ 
++	/* sb4edge: start every mode set with AVR off; prepare_for_kickoff turns it on for VRR */
++	if (phys_enc->hw_intf->ops.avr_ctrl)
++		phys_enc->hw_intf->ops.avr_ctrl(phys_enc->hw_intf, DPU_INTF_AVR_OFF);
++	phys_enc->avr_mode = DPU_INTF_AVR_OFF;
++
+ 	spin_unlock_irqrestore(phys_enc->enc_spinlock, lock_flags);
+ 
+ 	programmable_fetch_config(phys_enc, &timing_params);
+ }
+ 
++extern int msm_vrr_mode;
++
++/*
++ * sb4edge: turn AVR on or off to follow the CRTC's VRR_ENABLED (a property change without a mode set), and
++ * reprogram the minimum refresh. Called before each frame's flush; the INTF flush bit latches the change.
++ */
++static void dpu_encoder_phys_vid_update_avr(struct dpu_encoder_phys *phys_enc)
++{
++	struct dpu_hw_intf *intf = phys_enc->hw_intf;
++	struct dpu_hw_intf_timing_params timing = { 0 };
++	struct drm_display_mode mode;
++	u32 min_fps, fps, want = DPU_INTF_AVR_OFF;
++	unsigned long lock_flags;
++
++	if (!intf || !intf->ops.avr_ctrl || !intf->ops.avr_setup ||
++	    phys_enc->split_role != ENC_ROLE_SOLO)
++		return;
++
++	min_fps = dpu_encoder_get_vrr_min_fps(phys_enc->parent);
++	fps = drm_mode_vrefresh(&phys_enc->cached_mode);
++	if (min_fps && fps > min_fps)
++		want = msm_vrr_mode == 2 ? DPU_INTF_AVR_ONE_SHOT : DPU_INTF_AVR_CONTINUOUS;
++	if (want == phys_enc->avr_mode)
++		return;
++
++	drm_mode_init(&mode, &phys_enc->cached_mode);
++	drm_mode_to_intf_timing_params(phys_enc, &mode, &timing);
++
++	spin_lock_irqsave(phys_enc->enc_spinlock, lock_flags);
++	if (want != DPU_INTF_AVR_OFF)
++		intf->ops.avr_setup(intf, &timing, fps, min_fps);
++	intf->ops.avr_ctrl(intf, want);
++	spin_unlock_irqrestore(phys_enc->enc_spinlock, lock_flags);
++	if (phys_enc->hw_ctl->ops.update_pending_flush_intf)
++		phys_enc->hw_ctl->ops.update_pending_flush_intf(phys_enc->hw_ctl, intf->idx);
++
++	DRM_INFO("sb4edge: intf %d AVR %u (%u..%u Hz)\n", intf->idx - INTF_0, want, min_fps, fps);
++	phys_enc->avr_mode = want;
++}
++
+ static void dpu_encoder_phys_vid_vblank_irq(void *arg)
+ {
+ 	struct dpu_encoder_phys *phys_enc = arg;
+@@ -559,6 +604,8 @@
+ 	drm_enc = phys_enc->parent;
+ 
+ 	ctl = phys_enc->hw_ctl;
++	if (phys_enc->enable_state == DPU_ENC_ENABLED)
++		dpu_encoder_phys_vid_update_avr(phys_enc);
+ 	if (!ctl->ops.wait_reset_status)
+ 		return;
+ 
+@@ -602,6 +649,9 @@
+ 	}
+ 
+ 	spin_lock_irqsave(phys_enc->enc_spinlock, lock_flags);
++	if (phys_enc->avr_mode && phys_enc->hw_intf->ops.avr_ctrl)
++		phys_enc->hw_intf->ops.avr_ctrl(phys_enc->hw_intf, DPU_INTF_AVR_OFF);
++	phys_enc->avr_mode = DPU_INTF_AVR_OFF;
+ 	phys_enc->hw_intf->ops.enable_timing(phys_enc->hw_intf, 0);
+ 	if (dpu_encoder_phys_vid_is_master(phys_enc))
+ 		dpu_encoder_phys_inc_pending(phys_enc);
+@@ -665,6 +715,9 @@
+ 		phys_enc->hw_intf->ops.enable_timing(phys_enc->hw_intf, 1);
+ 		spin_unlock_irqrestore(phys_enc->enc_spinlock, lock_flags);
+ 		phys_enc->enable_state = DPU_ENC_ENABLED;
++	} else if (phys_enc->avr_mode && phys_enc->hw_intf->ops.avr_trigger) {
++		/* sb4edge: the new frame is flushed, end the extended front porch now */
++		phys_enc->hw_intf->ops.avr_trigger(phys_enc->hw_intf);
+ 	}
+ }
+ 
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_intf.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_intf.c
+@@ -609,6 +609,46 @@
+  * @addr: mapped register io address of MDP
+  * @mdss_rev: dpu core's major and minor versions
+  */
++/*
++ * sb4edge: AVR (adaptive variable refresh), the timing engine half of Qualcomm's "Qsync" (from the downstream
++ * SDE driver, sde_hw_intf.c). With AVR on, the vertical front porch is extended until a trigger or until the
++ * frame reaches INTF_AVR_VTOTAL pixels (the minimum refresh rate), so frames start when the compositor commits.
++ */
++static void dpu_hw_intf_avr_setup(struct dpu_hw_intf *intf,
++				  const struct dpu_hw_intf_timing_params *p,
++				  u32 default_fps, u32 min_fps)
++{
++	struct dpu_hw_blk_reg_map *c = &intf->hw;
++	u32 hsync_period, vsync_period, vsync_period_slow;
++
++	hsync_period = p->hsync_pulse_width + p->h_back_porch + p->width + p->h_front_porch;
++	vsync_period = p->vsync_pulse_width + p->v_back_porch + p->height + p->v_front_porch;
++	vsync_period_slow = vsync_period;
++	if (min_fps && default_fps > min_fps)
++		vsync_period_slow += mult_frac(vsync_period, default_fps - min_fps, min_fps);
++
++	DPU_REG_WRITE(c, INTF_AVR_VTOTAL, vsync_period_slow * hsync_period);
++}
++
++static void dpu_hw_intf_avr_ctrl(struct dpu_hw_intf *intf, u32 mode)
++{
++	struct dpu_hw_blk_reg_map *c = &intf->hw;
++	u32 avr_ctrl = 0, avr_mode = 0;
++
++	if (mode != DPU_INTF_AVR_OFF) {
++		avr_ctrl = BIT(0);
++		if (mode == DPU_INTF_AVR_ONE_SHOT)
++			avr_mode = BIT(0) | BIT(8);
++	}
++	DPU_REG_WRITE(c, INTF_AVR_CONTROL, avr_ctrl);
++	DPU_REG_WRITE(c, INTF_AVR_MODE, avr_mode);
++}
++
++static void dpu_hw_intf_avr_trigger(struct dpu_hw_intf *intf)
++{
++	DPU_REG_WRITE(&intf->hw, INTF_AVR_TRIGGER, 0x1);
++}
++
+ struct dpu_hw_intf *dpu_hw_intf_init(struct drm_device *dev,
+ 				     const struct dpu_intf_cfg *cfg,
+ 				     void __iomem *addr,
+@@ -667,6 +707,13 @@
+ 	 */
+ 	if (mdss_rev->core_major_ver >= 7)
+ 		c->ops.program_intf_cmd_cfg = dpu_hw_intf_program_intf_cmd_cfg;
++
++	/* sb4edge: AVR on DP/eDP interfaces (written for X1E80100, DPU 9.2) */
++	if (mdss_rev->core_major_ver >= 9 && cfg->type == INTF_DP) {
++		c->ops.avr_setup = dpu_hw_intf_avr_setup;
++		c->ops.avr_ctrl = dpu_hw_intf_avr_ctrl;
++		c->ops.avr_trigger = dpu_hw_intf_avr_trigger;
++	}
+ 
+ 	return c;
+ }
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_intf.h
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_intf.h
+@@ -76,6 +76,9 @@
+  * @vsync_sel:                  Select vsync signal for tear-effect configuration
+  * @disable_autorefresh:        Disable autorefresh if enabled
+  * @program_intf_cmd_cfg:       Program the DPU to interface datapath for command mode
++ * @avr_setup:                  sb4edge: program the AVR (adaptive variable refresh) maximum frame length
++ * @avr_ctrl:                   sb4edge: enable/disable AVR (0 off, 1 continuous, 2 one-shot)
++ * @avr_trigger:                sb4edge: end the extended front porch and start the next frame
+  */
+ struct dpu_hw_intf_ops {
+ 	void (*setup_timing_gen)(struct dpu_hw_intf *intf,
+@@ -112,7 +115,17 @@
+ 
+ 	void (*program_intf_cmd_cfg)(struct dpu_hw_intf *intf,
+ 				     struct dpu_hw_intf_cmd_mode_cfg *cmd_mode_cfg);
++
++	void (*avr_setup)(struct dpu_hw_intf *intf,
++			  const struct dpu_hw_intf_timing_params *p,
++			  u32 default_fps, u32 min_fps);
++	void (*avr_ctrl)(struct dpu_hw_intf *intf, u32 mode);
++	void (*avr_trigger)(struct dpu_hw_intf *intf);
+ };
++
++#define DPU_INTF_AVR_OFF	0
++#define DPU_INTF_AVR_CONTINUOUS	1
++#define DPU_INTF_AVR_ONE_SHOT	2
+ 
+ struct dpu_hw_intf {
+ 	struct dpu_hw_blk_reg_map hw;
+--- a/drivers/gpu/drm/msm/dp/dp_ctrl.c
++++ b/drivers/gpu/drm/msm/dp/dp_ctrl.c
+@@ -1719,6 +1719,10 @@
+ 	if (drm_dp_max_downspread(dpcd))
+ 		encoding[0] |= DP_SPREAD_AMP_0_5;
+ 
++	/* sb4edge: variable refresh: the sink follows the stream's timing instead of the MSA */
++	if (panel->vrr_msa_ignore)
++		encoding[0] |= DP_MSA_TIMING_PAR_IGNORE_EN;
++
+ 	/* config DOWNSPREAD_CTRL and MAIN_LINK_CHANNEL_CODING_SET */
+ 	drm_dp_dpcd_write(ctrl->aux, DP_DOWNSPREAD_CTRL, encoding, 2);
+ 
+--- a/drivers/gpu/drm/msm/dp/dp_display.c
++++ b/drivers/gpu/drm/msm/dp/dp_display.c
+@@ -307,6 +307,22 @@
+ 
+ 	dp->msm_dp_display.psr_supported = dp->panel->psr_cap.version && psr_enabled;
+ 
++	/*
++	 * sb4edge: variable refresh needs a sink that can ignore the MSA timing (DPCD 0x007 bit 6; the stream's
++	 * front porch then varies) and an EDID refresh range. The DPU side (AVR) runs only while the compositor
++	 * sets VRR_ENABLED.
++	 */
++	if (connector->vrr_capable_property) {
++		bool vrr = (dpcd[DP_DOWN_STREAM_PORT_COUNT] & DP_MSA_TIMING_PAR_IGNORED) &&
++			   info->monitor_range.min_vfreq &&
++			   info->monitor_range.max_vfreq > info->monitor_range.min_vfreq;
++
++		dp->panel->vrr_msa_ignore = vrr;
++		drm_connector_set_vrr_capable_property(connector, vrr);
++		drm_info(dp->drm_dev, "sb4edge: vrr_capable %d (%u-%u Hz)\n", vrr,
++			   info->monitor_range.min_vfreq, info->monitor_range.max_vfreq);
++	}
++
+ 	dp->audio_supported = info->has_audio;
+ 	msm_dp_panel_handle_sink_request(dp->panel, drm_edid);
+ 
+--- a/drivers/gpu/drm/msm/dp/dp_drm.c
++++ b/drivers/gpu/drm/msm/dp/dp_drm.c
+@@ -359,6 +359,8 @@
+ }
+ 
+ /* connector initialization */
++extern int msm_vrr_mode;
++
+ struct drm_connector *msm_dp_drm_connector_init(struct msm_dp *msm_dp_display,
+ 					    struct drm_encoder *encoder)
+ {
+@@ -370,6 +372,10 @@
+ 
+ 	if (!msm_dp_display->is_edp)
+ 		drm_connector_attach_dp_subconnector_property(connector);
++
++	/* sb4edge: variable refresh (msm.vrr), eDP only; the value is set at HPD from DPCD and EDID */
++	if (msm_vrr_mode && msm_dp_display->is_edp)
++		drm_connector_attach_vrr_capable_property(connector);
+ 
+ 	return connector;
+ }
+--- a/drivers/gpu/drm/msm/dp/dp_panel.h
++++ b/drivers/gpu/drm/msm/dp/dp_panel.h
+@@ -39,6 +39,7 @@
+ struct msm_dp_panel {
+ 	/* dpcd raw data */
+ 	u8 dpcd[DP_RECEIVER_CAP_SIZE];
++	bool vrr_msa_ignore;	/* sb4edge: VRR in use, sink told to ignore MSA timing */
+ 	u8 downstream_ports[DP_MAX_DOWNSTREAM_PORTS];
+ 
+ 	struct msm_dp_link_info link_info;

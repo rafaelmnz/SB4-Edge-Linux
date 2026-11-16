@@ -1,0 +1,4 @@
+# sb4edge: the login screen must not dim the panel when idle. Its dim (to idle-brightness, 30%) was never undone
+# when a session started, so every login inherited the dimmed level as the user's brightness.
+[org/gnome/settings-daemon/plugins/power]
+idle-dim=false

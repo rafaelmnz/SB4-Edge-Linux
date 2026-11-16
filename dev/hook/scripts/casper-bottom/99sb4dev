@@ -1,0 +1,39 @@
+#!/bin/sh
+# sb4edge development hook (loaded as an extra initrd by the stick's dev boot entry only).
+# Installs a oneshot unit that runs sb4dev/setup.sh from the stick's "writable" partition.
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case $1 in prereqs) prereqs; exit 0;; esac
+
+mkdir -p "${rootmnt}/usr/local/sbin" "${rootmnt}/etc/systemd/system/multi-user.target.wants"
+cat > "${rootmnt}/usr/local/sbin/sb4dev-boot" <<'EOS'
+#!/bin/sh
+# Find the "writable" partition on the USB stick and run sb4dev/setup.sh from it. The stick's whole
+# disk is mounted as /cdrom, so the partition is reached through a loop device at its offset.
+for p in /sys/class/block/*; do
+	[ -f "$p/partition" ] || continue
+	n=${p##*/}
+	[ "$(blkid -o value -s LABEL /dev/$n 2>/dev/null)" = writable ] || continue
+	d=$(basename "$(readlink -f "$p/..")")
+	[ "$(lsblk -dno TRAN /dev/$d | tr -d ' ')" = usb ] || continue
+	L=$(losetup -f --show -o $(($(cat $p/start) * 512)) --sizelimit $(($(cat $p/size) * 512)) /dev/$d) || exit 1
+	mkdir -p /run/sb4w && mount "$L" /run/sb4w || exit 1
+	[ -x /run/sb4w/sb4dev/setup.sh ] && exec /run/sb4w/sb4dev/setup.sh /run/sb4w/sb4dev
+	exit 0
+done
+EOS
+chmod 755 "${rootmnt}/usr/local/sbin/sb4dev-boot"
+cat > "${rootmnt}/etc/systemd/system/sb4dev.service" <<'EOS'
+[Unit]
+Description=sb4edge development access (SSH, Tailscale) from the stick
+After=local-fs.target
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=600
+ExecStart=/usr/local/sbin/sb4dev-boot
+[Install]
+WantedBy=multi-user.target
+EOS
+ln -sf ../sb4dev.service "${rootmnt}/etc/systemd/system/multi-user.target.wants/sb4dev.service"
+exit 0

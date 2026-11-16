@@ -1,0 +1,12 @@
+[Unit]
+Description=Keep rEFInd (sb4edge boot menu) installed and first in the boot order
+ConditionPathExists=!/rofs
+RequiresMountsFor=/boot/efi
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/sb4edge/refind/sb4edge-refind-install
+
+[Install]
+WantedBy=multi-user.target

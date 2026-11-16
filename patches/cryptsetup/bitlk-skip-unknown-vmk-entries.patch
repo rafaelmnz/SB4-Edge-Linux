@@ -1,0 +1,25 @@
+Description: BITLK: skip unknown metadata entries inside usable VMKs
+ Recent Windows 11 builds add a small entry (value 0x24) to the clear-key VMK
+ of suspended / not-yet-activated device-encryption volumes. libcryptsetup
+ rejected the whole device ("Unexpected metadata entry value '36' found when
+ parsing supported Volume Master Key"), so udisks/GNOME Files could not unlock
+ the Windows partition. Unknown entries are now logged and skipped, as they
+ already are for unsupported VMKs; the keys actually needed are still checked
+ when the volume is opened.
+Author: sb4edge-linux
+--- a/lib/bitlk/bitlk.c
++++ b/lib/bitlk/bitlk.c
+@@ -372,12 +372,7 @@
+ 		} else if (key_entry_value == BITLK_ENTRY_VALUE_TPM_KEY && (*vmk)->protection == BITLK_PROTECTION_TPM) {
+ 			;
+ 		} else {
+-			if (supported) {
+-				log_err(cd, _("Unexpected metadata entry value '%u' found when parsing supported Volume Master Key."), key_entry_value);
+-				return -EINVAL;
+-			} else {
+-				log_dbg(cd, "Unexpected metadata entry value '%u' found when parsing unsupported VMK.", key_entry_value);
+-			}
++			log_dbg(cd, "Skipping unknown metadata entry value '%u' in %s VMK.", key_entry_value, supported ? "supported" : "unsupported");
+ 		}
+ 
+ 		start += key_entry_size;

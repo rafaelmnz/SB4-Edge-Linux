@@ -1,0 +1,37 @@
+# Never published: personal notes, machine logs and hardware reports (usernames, IPs, Tailscale addresses, serials,
+# MAC addresses), build output and scratch, third-party source checkouts and the raw Windows dumps.
+.DS_Store
+HANDOFF.md
+logs/
+hw-report/
+test/
+build/
+work/
+iso/
+out/
+research/
+sensors/windows-persist/
+patches/rc2-tree-backup/
+refind/mockup/
+# build outputs (build-fastrpc.sh, fluence tools)
+fluence/fastrpc-build/
+fluence/fastrpc-build.rebuilt/
+fluence/caldump
+fluence/gkvdump
+fluence/ko/
+dtbo/*.dtbo
+*.iso
+*.iso.sha256
+*.deb
+*.ko
+*.log
+*.orig
+*.rej
+*.bak*
+*.new
+__pycache__/
+# monitor EDID dumps (contain the monitor serial number); not used by the build
+display/g9/*.edid
+display/g9/*.txt
+# rEFInd package used by remaster.sh
+!refind/refind_*_arm64.deb

@@ -1,0 +1,4 @@
+# DDC/CI (monitor brightness etc. with ddcutil) for the logged-in user. ddcutil's own rule matches PCI display
+# adapters only; on the X1E the DDC buses are msm's DP AUX I2C adapters (HDMI port and both USB-C ports).
+# The PD controller and other Geni I2C buses stay root-only.
+SUBSYSTEM=="i2c-dev", KERNEL=="i2c-[0-9]*", ATTR{name}=="dpu_dp_aux", TAG+="uaccess"

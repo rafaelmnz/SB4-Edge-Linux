@@ -1,0 +1,115 @@
+--- a/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge.dtsi
++++ b/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge.dtsi
+@@ -203,10 +203,10 @@
+ 	sound {
+ 		compatible = "qcom,x1e80100-sndcard";
+ 		model = "X1E80100-GalaxyBook4Edge";
+-		audio-routing = "WooferLeft IN", "WSA WSA_SPK1 OUT",
+-				"TweeterLeft IN", "WSA WSA_SPK2 OUT",
+-				"WooferRight IN", "WSA2 WSA_SPK1 OUT",
+-				"TweeterRight IN", "WSA2 WSA_SPK2 OUT",
++		audio-routing = "TweeterLeft IN", "WSA WSA_SPK1 OUT",
++				"TweeterRight IN", "WSA WSA_SPK2 OUT",
++				"WooferLeft IN", "WSA2 WSA_SPK1 OUT",
++				"WooferRight IN", "WSA2 WSA_SPK2 OUT",
+ 				"IN1_HPHL", "HPHL_OUT",
+ 				"IN2_HPHR", "HPHR_OUT",
+ 				"AMIC2", "MIC BIAS2",
+@@ -252,9 +252,9 @@
+ 			link-name = "WSA Playback";
+ 
+ 			codec {
+-				sound-dai = <&left_woofer>, <&left_tweeter>,
++				sound-dai = <&left_tweeter>, <&right_tweeter>,
+ 					    <&swr0 0>, <&lpass_wsamacro 0>,
+-					    <&right_woofer>, <&right_tweeter>,
++					    <&left_woofer>, <&right_woofer>,
+ 					    <&swr3 0>, <&lpass_wsa2macro 0>;
+ 			};
+ 
+@@ -1120,28 +1489,26 @@
+ 	pinctrl-0 = <&wsa_swr_active>, <&spkr_01_sd_n_active>;
+ 	pinctrl-names = "default";
+ 
+-	/* WSA8845, Left Woofer */
+-	left_woofer: speaker@0,0 {
+-		compatible = "sdw20217020400";
+-		reg = <0 0>;
++	/* WSA8835, Left Tweeter */
++	left_tweeter: speaker@0,1 {
++		compatible = "sdw10217020200";
++		reg = <0 1>;
+ 		reset-gpios = <&lpass_tlmm 12 GPIO_ACTIVE_LOW>;
+ 		#sound-dai-cells = <0>;
+-		sound-name-prefix = "WooferLeft";
+-		vdd-1p8-supply = <&vreg_l15b_1p8>;
+-		vdd-io-supply = <&vreg_l12b_1p2>;
+-		qcom,port-mapping = <1 2 3 7 10 13>;
++		sound-name-prefix = "TweeterLeft";
++		vdd-supply = <&vreg_l15b_1p8>;
++		qcom,port-mapping = <1 2 3 10>;
+ 	};
+ 
+-	/* WSA8845, Left Tweeter */
+-	left_tweeter: speaker@0,1 {
+-		compatible = "sdw20217020400";
+-		reg = <0 1>;
++	/* WSA8835, Right Tweeter */
++	right_tweeter: speaker@0,2 {
++		compatible = "sdw10217020200";
++		reg = <0 2>;
+ 		reset-gpios = <&lpass_tlmm 12 GPIO_ACTIVE_LOW>;
+ 		#sound-dai-cells = <0>;
+-		sound-name-prefix = "TweeterLeft";
+-		vdd-1p8-supply = <&vreg_l15b_1p8>;
+-		vdd-io-supply = <&vreg_l12b_1p2>;
+-		qcom,port-mapping = <4 5 6 7 11 13>;
++		sound-name-prefix = "TweeterRight";
++		vdd-supply = <&vreg_l15b_1p8>;
++		qcom,port-mapping = <4 5 6 11>;
+ 	};
+ };
+ 
+@@ -1173,28 +1540,26 @@
+ 	pinctrl-0 = <&wsa2_swr_active>, <&spkr_23_sd_n_active>;
+ 	pinctrl-names = "default";
+ 
+-	/* WSA8845, Right Woofer */
+-	right_woofer: speaker@0,0 {
+-		compatible = "sdw20217020400";
+-		reg = <0 0>;
++	/* WSA8835, Left Woofer */
++	left_woofer: speaker@0,1 {
++		compatible = "sdw10217020200";
++		reg = <0 1>;
+ 		reset-gpios = <&lpass_tlmm 13 GPIO_ACTIVE_LOW>;
+ 		#sound-dai-cells = <0>;
+-		sound-name-prefix = "WooferRight";
+-		vdd-1p8-supply = <&vreg_l15b_1p8>;
+-		vdd-io-supply = <&vreg_l12b_1p2>;
+-		qcom,port-mapping = <1 2 3 7 10 13>;
++		sound-name-prefix = "WooferLeft";
++		vdd-supply = <&vreg_l15b_1p8>;
++		qcom,port-mapping = <1 2 3 10>;
+ 	};
+ 
+-	/* WSA8845, Right Tweeter */
+-	right_tweeter: speaker@0,1 {
+-		compatible = "sdw20217020400";
+-		reg = <0 1>;
++	/* WSA8835, Right Woofer */
++	right_woofer: speaker@0,2 {
++		compatible = "sdw10217020200";
++		reg = <0 2>;
+ 		reset-gpios = <&lpass_tlmm 13 GPIO_ACTIVE_LOW>;
+ 		#sound-dai-cells = <0>;
+-		sound-name-prefix = "TweeterRight";
+-		vdd-1p8-supply = <&vreg_l15b_1p8>;
+-		vdd-io-supply = <&vreg_l12b_1p2>;
+-		qcom,port-mapping = <4 5 6 7 11 13>;
++		sound-name-prefix = "WooferRight";
++		vdd-supply = <&vreg_l15b_1p8>;
++		qcom,port-mapping = <4 5 6 11>;
+ 	};
+ };
+ 

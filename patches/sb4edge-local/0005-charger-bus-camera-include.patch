@@ -1,0 +1,22 @@
+--- a/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge.dtsi
++++ b/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge.dtsi
+@@ -949,6 +949,13 @@
+ 	status = "okay";
+ };
+ 
++/* Charger (ISL9241) at 0x09 and smart battery at 0x0b (on the 14", ACPI EMEC IC21) */
++&i2c20 {
++	clock-frequency = <100000>;
++
++	status = "okay";
++};
++
+ &lpass_tlmm {
+ 	spkr_01_sd_n_active: spkr-01-sd-n-active-state {
+ 		pins = "gpio12";
+@@ -1562,3 +1569,5 @@
+ 
+ 	status = "okay";
+ };
++
++#include "x1-samsung-galaxy-book4-edge-camera.dtsi"

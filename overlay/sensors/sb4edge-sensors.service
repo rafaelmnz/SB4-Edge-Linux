@@ -1,0 +1,17 @@
+[Unit]
+Description=Ambient light sensor: ADSP sensors domain file service (Samsung Galaxy Book4 Edge)
+Documentation=file:///usr/lib/sb4edge/fluence/README
+ConditionPathExists=/usr/share/qcom/x1e80100/Samsung/galaxy-book4-edge-16/sensors/sns_reg.conf
+ConditionPathExists=/usr/lib/sb4edge/fluence/adsprpcd
+After=sb4edge-fluence.service
+
+[Service]
+Environment=LD_LIBRARY_PATH=/usr/lib/sb4edge/fluence/lib
+ExecStartPre=/usr/lib/sb4edge/sb4edge-sensors-setup
+ExecStartPre=/bin/sh -c 'for i in $(seq 60); do [ -e /dev/fastrpc-adsp ] && exit 0; sleep 1; done; exit 1'
+ExecStart=/usr/lib/sb4edge/fluence/adsprpcd sensorspd adsp
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

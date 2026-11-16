@@ -1,0 +1,5 @@
+# The Galaxy Book4 Edge keyboard (ENE 0CF2:9050 on i2c-hid) also reports BTN_0/BTN_1 and ABS_VOLUME,
+# so udev's input_id classifies it as a tablet pad and libinput never treats it as a keyboard.
+# libinput also reads the tags of the parent inputN device, so clear them there too.
+ACTION!="remove", SUBSYSTEM=="input", ATTRS{name}=="hid-over-i2c 0CF2:9050 Keyboard", \
+  ENV{ID_INPUT_TABLET}="", ENV{ID_INPUT_TABLET_PAD}=""

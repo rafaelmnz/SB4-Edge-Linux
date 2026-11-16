@@ -1,0 +1,33 @@
+--- a/arch/arm64/boot/dts/qcom/x1e84100-samsung-galaxy-book4-edge-16.dts
++++ b/arch/arm64/boot/dts/qcom/x1e84100-samsung-galaxy-book4-edge-16.dts
+@@ -30,4 +30,30 @@
+ 	compatible = "samsung,atna60cl07", "samsung,atna33xc20";
+ };
+ 
++/*
++ * SD card reader (16 inch only): SDC2, card detect on TLMM 71 (active low), vmmc L9B 2.9 V, vqmmc L6B 1.8 V.
++ * Verified on hardware 2026-11-15 (dtbo test: UHS-I SDR104 SDHC card).
++ */
++&sdhc_2 {
++	cd-gpios = <&tlmm 71 GPIO_ACTIVE_LOW>;
++	pinctrl-0 = <&sdc2_default &sdc2_card_det_n>;
++	pinctrl-1 = <&sdc2_sleep &sdc2_card_det_n>;
++	pinctrl-names = "default", "sleep";
++	vmmc-supply = <&vreg_l9b_2p9>;
++	vqmmc-supply = <&vreg_l6b_1p8>;
++	bus-width = <4>;
++	no-sdio;
++	no-mmc;
++	status = "okay";
++};
++
++&tlmm {
++	sdc2_card_det_n: sdc2-card-det-state {
++		pins = "gpio71";
++		function = "gpio";
++		drive-strength = <2>;
++		bias-pull-up;
++	};
++};
++
+ #include "x1-samsung-galaxy-book4-edge-retimers.dtsi"

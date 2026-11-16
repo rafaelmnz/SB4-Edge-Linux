@@ -1,0 +1,25 @@
+#!/bin/sh
+# Wrap -sb4edge kernels in the stubble EFI stub with the Galaxy Book4 Edge 16"
+# devicetree, so the right DTB is picked from SMBIOS hardware IDs at boot.
+# Needs: apt install systemd-ukify stubble python3-pefile
+set -e
+version="$1"
+image="${2:-/boot/vmlinuz-$version}"
+case "$version" in *-sb4edge) ;; *) exit 0 ;; esac
+[ -f "$image" ] || exit 0
+
+if ! command -v ukify >/dev/null || [ ! -f /usr/lib/stubble/stubble.efi ]; then
+	echo "sb4edge: WARNING: $image is not wrapped with stubble and will not boot on the Galaxy Book4 Edge." >&2
+	echo "sb4edge: install systemd-ukify, stubble and python3-pefile, then run: $0 $version $image" >&2
+	exit 0
+fi
+
+if python3 -c "import pefile,sys; p=pefile.PE(sys.argv[1], fast_load=True); sys.exit(0 if any(s.Name.startswith(b'.dtbauto') for s in p.sections) else 1)" "$image"; then
+	exit 0
+fi
+
+ukify build --stub=/usr/lib/stubble/stubble.efi --linux="$image" --hwids=/usr/share/sb4edge/hwids \
+	--devicetree-auto="/usr/lib/linux-image-$version/qcom/x1e84100-samsung-galaxy-book4-edge-16.dtb" \
+	--uname="$version" --output="$image.stubble"
+mv "$image.stubble" "$image"
+echo "sb4edge: wrapped $image with stubble"

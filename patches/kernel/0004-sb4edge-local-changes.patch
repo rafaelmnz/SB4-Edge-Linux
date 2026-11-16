@@ -1,0 +1,1739 @@
+diff --git a/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge-camera.dtsi b/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge-camera.dtsi
+new file mode 100644
+index 000000000000..4b3a7463546a
+--- /dev/null
++++ b/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge-camera.dtsi
+@@ -0,0 +1,214 @@
++/* Included by x1-samsung-galaxy-book4-edge.dtsi (sb4edge): front camera, CCI0, CAMSS */
++/* Front camera (Partron OV02C10, 26 MHz module oscillator) as on the 14" (omarchy), plus the SoC's
++ * CCI0 and CAMSS blocks that hamoa.dtsi in 7.4-rc2 does not have yet. */
++&{/} {
++	cam_osc: clock-cam-osc {
++		compatible = "fixed-clock";
++		#clock-cells = <0>;
++		clock-frequency = <26000000>;
++	};
++
++	vreg_cam_1p8: regulator-cam-1p8 {
++		compatible = "regulator-fixed";
++		regulator-name = "VREG_CAM_1P8";
++		regulator-min-microvolt = <1800000>;
++		regulator-max-microvolt = <1800000>;
++		gpio = <&tlmm 99 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		pinctrl-0 = <&cam_dovdd_en>;
++		pinctrl-names = "default";
++		startup-delay-us = <1000>;
++	};
++
++	vreg_cam_2p8: regulator-cam-2p8 {
++		compatible = "regulator-fixed";
++		regulator-name = "VREG_CAM_2P8";
++		regulator-min-microvolt = <2800000>;
++		regulator-max-microvolt = <2800000>;
++		gpio = <&tlmm 96 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		pinctrl-0 = <&cam_avdd_en>;
++		pinctrl-names = "default";
++		startup-delay-us = <1000>;
++	};
++};
++
++&tlmm {
++	cam_avdd_en: cam-avdd-en-state {
++		pins = "gpio96";
++		function = "gpio";
++		drive-strength = <2>;
++		bias-disable;
++	};
++
++	cam_dovdd_en: cam-dovdd-en-state {
++		pins = "gpio99";
++		function = "gpio";
++		drive-strength = <2>;
++		bias-disable;
++	};
++
++	cam_rgb_default: cam-rgb-default-state {
++		pins = "gpio109";
++		function = "gpio";
++		drive-strength = <2>;
++		bias-disable;
++	};
++
++	cci0_default: cci0-default-state {
++		cci0-i2c0-default-pins {
++			pins = "gpio101", "gpio102";
++			function = "cci_i2c";
++			drive-strength = <2>;
++			bias-pull-up;
++		};
++		cci0-i2c1-default-pins {
++			pins = "gpio103", "gpio104";
++			function = "cci_i2c";
++			drive-strength = <2>;
++			bias-pull-up;
++		};
++	};
++
++	cci0_sleep: cci0-sleep-state {
++		cci0-i2c0-sleep-pins {
++			pins = "gpio101", "gpio102";
++			function = "cci_i2c";
++			drive-strength = <2>;
++			bias-pull-down;
++		};
++		cci0-i2c1-sleep-pins {
++			pins = "gpio103", "gpio104";
++			function = "cci_i2c";
++			drive-strength = <2>;
++			bias-pull-down;
++		};
++	};
++};
++
++&{/soc@0} {
++	cci0: cci@ac15000 {
++		compatible = "qcom,x1e80100-cci", "qcom,msm8996-cci";
++		reg = <0 0x0ac15000 0 0x1000>;
++		interrupts = <GIC_SPI 460 IRQ_TYPE_EDGE_RISING>;
++		clocks = <&camcc CAM_CC_CAMNOC_AXI_RT_CLK>,
++			 <&camcc CAM_CC_CPAS_AHB_CLK>,
++			 <&camcc CAM_CC_CCI_0_CLK>;
++		clock-names = "camnoc_axi", "cpas_ahb", "cci";
++		power-domains = <&camcc CAM_CC_TITAN_TOP_GDSC>;
++		pinctrl-0 = <&cci0_default>;
++		pinctrl-1 = <&cci0_sleep>;
++		pinctrl-names = "default", "sleep";
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		cci0_i2c0: i2c-bus@0 {
++			reg = <0>;
++			clock-frequency = <1000000>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			camera@36 {
++				compatible = "ovti,ov02c10";
++				reg = <0x36>;
++				reset-gpios = <&tlmm 109 GPIO_ACTIVE_LOW>;
++				pinctrl-0 = <&cam_rgb_default>;
++				pinctrl-names = "default";
++				clocks = <&cam_osc>;
++				orientation = <0>;
++				rotation = <180>;
++				avdd-supply = <&vreg_cam_2p8>;
++				dovdd-supply = <&vreg_cam_1p8>;
++
++				port {
++					ov02c10_ep: endpoint {
++						data-lanes = <1 2>;
++						link-frequencies = /bits/ 64 <333125000>;
++						remote-endpoint = <&camss_csiphy0_inep>;
++					};
++				};
++			};
++		};
++
++		cci0_i2c1: i2c-bus@1 {
++			reg = <1>;
++			clock-frequency = <1000000>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++		};
++	};
++
++	camss: isp@acb7000 {
++		compatible = "qcom,x1e80100-camss";
++		reg = <0 0x0acb7000 0 0x2000>, <0 0x0acb9000 0 0x2000>, <0 0x0acbb000 0 0x2000>,
++		      <0 0x0acc6000 0 0x1000>, <0 0x0acca000 0 0x1000>, <0 0x0acb6000 0 0x1000>,
++		      <0 0x0ace4000 0 0x2000>, <0 0x0ace6000 0 0x2000>, <0 0x0ace8000 0 0x2000>,
++		      <0 0x0acec000 0 0x4000>, <0 0x0acf6000 0 0x1000>, <0 0x0acf7000 0 0x1000>,
++		      <0 0x0acf8000 0 0x1000>, <0 0x0ac62000 0 0x4000>, <0 0x0ac71000 0 0x4000>,
++		      <0 0x0acc7000 0 0x2000>, <0 0x0accb000 0 0x2000>;
++		reg-names = "csid0", "csid1", "csid2", "csid_lite0", "csid_lite1", "csid_wrapper",
++			    "csiphy0", "csiphy1", "csiphy2", "csiphy4", "csitpg0", "csitpg1", "csitpg2",
++			    "vfe0", "vfe1", "vfe_lite0", "vfe_lite1";
++		clocks = <&camcc CAM_CC_CAMNOC_AXI_NRT_CLK>, <&camcc CAM_CC_CAMNOC_AXI_RT_CLK>,
++			 <&camcc CAM_CC_CORE_AHB_CLK>, <&camcc CAM_CC_CPAS_AHB_CLK>,
++			 <&camcc CAM_CC_CPAS_FAST_AHB_CLK>, <&camcc CAM_CC_CPAS_IFE_0_CLK>,
++			 <&camcc CAM_CC_CPAS_IFE_1_CLK>, <&camcc CAM_CC_CPAS_IFE_LITE_CLK>,
++			 <&camcc CAM_CC_CPHY_RX_CLK_SRC>, <&camcc CAM_CC_CSID_CLK>,
++			 <&camcc CAM_CC_CSID_CSIPHY_RX_CLK>, <&camcc CAM_CC_CSIPHY0_CLK>,
++			 <&camcc CAM_CC_CSI0PHYTIMER_CLK>, <&camcc CAM_CC_CSIPHY1_CLK>,
++			 <&camcc CAM_CC_CSI1PHYTIMER_CLK>, <&camcc CAM_CC_CSIPHY2_CLK>,
++			 <&camcc CAM_CC_CSI2PHYTIMER_CLK>, <&camcc CAM_CC_CSIPHY4_CLK>,
++			 <&camcc CAM_CC_CSI4PHYTIMER_CLK>, <&gcc GCC_CAMERA_HF_AXI_CLK>,
++			 <&gcc GCC_CAMERA_SF_AXI_CLK>, <&camcc CAM_CC_IFE_0_CLK>,
++			 <&camcc CAM_CC_IFE_0_FAST_AHB_CLK>, <&camcc CAM_CC_IFE_1_CLK>,
++			 <&camcc CAM_CC_IFE_1_FAST_AHB_CLK>, <&camcc CAM_CC_IFE_LITE_CLK>,
++			 <&camcc CAM_CC_IFE_LITE_AHB_CLK>, <&camcc CAM_CC_IFE_LITE_CPHY_RX_CLK>,
++			 <&camcc CAM_CC_IFE_LITE_CSID_CLK>;
++		clock-names = "camnoc_nrt_axi", "camnoc_rt_axi", "core_ahb", "cpas_ahb",
++			      "cpas_fast_ahb", "cpas_vfe0", "cpas_vfe1", "cpas_vfe_lite",
++			      "cphy_rx_clk_src", "csid", "csid_csiphy_rx", "csiphy0", "csiphy0_timer",
++			      "csiphy1", "csiphy1_timer", "csiphy2", "csiphy2_timer", "csiphy4",
++			      "csiphy4_timer", "gcc_axi_hf", "gcc_axi_sf", "vfe0", "vfe0_fast_ahb",
++			      "vfe1", "vfe1_fast_ahb", "vfe_lite", "vfe_lite_ahb", "vfe_lite_cphy_rx",
++			      "vfe_lite_csid";
++		interrupts = <GIC_SPI 464 IRQ_TYPE_EDGE_RISING>, <GIC_SPI 466 IRQ_TYPE_EDGE_RISING>,
++			     <GIC_SPI 431 IRQ_TYPE_EDGE_RISING>, <GIC_SPI 468 IRQ_TYPE_EDGE_RISING>,
++			     <GIC_SPI 359 IRQ_TYPE_EDGE_RISING>, <GIC_SPI 477 IRQ_TYPE_EDGE_RISING>,
++			     <GIC_SPI 478 IRQ_TYPE_EDGE_RISING>, <GIC_SPI 479 IRQ_TYPE_EDGE_RISING>,
++			     <GIC_SPI 122 IRQ_TYPE_EDGE_RISING>, <GIC_SPI 465 IRQ_TYPE_EDGE_RISING>,
++			     <GIC_SPI 467 IRQ_TYPE_EDGE_RISING>, <GIC_SPI 469 IRQ_TYPE_EDGE_RISING>,
++			     <GIC_SPI 360 IRQ_TYPE_EDGE_RISING>;
++		interrupt-names = "csid0", "csid1", "csid2", "csid_lite0", "csid_lite1", "csiphy0",
++				  "csiphy1", "csiphy2", "csiphy4", "vfe0", "vfe1", "vfe_lite0", "vfe_lite1";
++		interconnects = <&gem_noc MASTER_APPSS_PROC QCOM_ICC_TAG_ACTIVE_ONLY
++				 &config_noc SLAVE_CAMERA_CFG QCOM_ICC_TAG_ACTIVE_ONLY>,
++				<&mmss_noc MASTER_CAMNOC_HF QCOM_ICC_TAG_ALWAYS
++				 &mc_virt SLAVE_EBI1 QCOM_ICC_TAG_ALWAYS>,
++				<&mmss_noc MASTER_CAMNOC_SF QCOM_ICC_TAG_ALWAYS
++				 &mc_virt SLAVE_EBI1 QCOM_ICC_TAG_ALWAYS>,
++				<&mmss_noc MASTER_CAMNOC_ICP QCOM_ICC_TAG_ALWAYS
++				 &mc_virt SLAVE_EBI1 QCOM_ICC_TAG_ALWAYS>;
++		interconnect-names = "ahb", "hf_mnoc", "sf_mnoc", "sf_icp_mnoc";
++		iommus = <&apps_smmu 0x800 0x60>, <&apps_smmu 0x820 0x60>, <&apps_smmu 0x840 0x60>,
++			 <&apps_smmu 0x860 0x60>, <&apps_smmu 0x18a0 0x0>;
++		power-domains = <&camcc CAM_CC_IFE_0_GDSC>, <&camcc CAM_CC_IFE_1_GDSC>,
++				<&camcc CAM_CC_TITAN_TOP_GDSC>;
++		power-domain-names = "ife0", "ife1", "top";
++		vdd-csiphy-0p8-supply = <&vreg_l2c_0p8>;
++		vdd-csiphy-1p2-supply = <&vreg_l1c_1p2>;
++
++		ports {
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			port@0 {
++				reg = <0>;
++				camss_csiphy0_inep: endpoint {
++					clock-lanes = <7>;
++					data-lanes = <0 1>;
++					remote-endpoint = <&ov02c10_ep>;
++				};
++			};
++		};
++	};
++};
+diff --git a/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge-retimers.dtsi b/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge-retimers.dtsi
+new file mode 100644
+index 000000000000..d605cacb77b2
+--- /dev/null
++++ b/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge-retimers.dtsi
+@@ -0,0 +1,268 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * USB-C SuperSpeed for the Samsung Galaxy Book4 Edge: Parade PS8830 retimers.
++ *
++ * Ported from the 14" omarchy gb4e patch (retimer hunks only; the 14" speaker,
++ * camera and EC hunks are not taken). ACPI UCS0 of the 15.6" (and of the CRD /
++ * Yoga Slim 7x) puts the retimers at 0x08 on I2C4 and I2C8, which are Linux
++ * i2c3 and i2c7, with the same enable and reset pins, so the 16" is assumed to
++ * match. The SBU muxes are disabled: ACPI lists no SBU mux pins.
++ *
++ * The retimers only pass the SS lanes once something sets orientation and
++ * mode; that is the gb4e_typec module plus the usbc service.
++ */
++
++/ {
++	vreg_rtmr0_1p15: regulator-rtmr0-1p15 {
++		compatible = "regulator-fixed";
++		regulator-name = "VREG_RTMR0_1P15";
++		regulator-min-microvolt = <1150000>;
++		regulator-max-microvolt = <1150000>;
++		gpio = <&pmc8380_5_gpios 8 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		pinctrl-0 = <&usb0_pwr_1p15_reg_en>;
++		pinctrl-names = "default";
++		regulator-boot-on;
++	};
++
++	vreg_rtmr0_1p8: regulator-rtmr0-1p8 {
++		compatible = "regulator-fixed";
++		regulator-name = "VREG_RTMR0_1P8";
++		regulator-min-microvolt = <1800000>;
++		regulator-max-microvolt = <1800000>;
++		gpio = <&pm8550ve_9_gpios 8 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		pinctrl-0 = <&usb0_1p8_reg_en>;
++		pinctrl-names = "default";
++		regulator-boot-on;
++	};
++
++	vreg_rtmr0_3p3: regulator-rtmr0-3p3 {
++		compatible = "regulator-fixed";
++		regulator-name = "VREG_RTMR0_3P3";
++		regulator-min-microvolt = <3300000>;
++		regulator-max-microvolt = <3300000>;
++		gpio = <&pm8550_gpios 11 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		pinctrl-0 = <&usb0_3p3_reg_en>;
++		pinctrl-names = "default";
++		regulator-boot-on;
++	};
++
++	vreg_rtmr1_1p15: regulator-rtmr1-1p15 {
++		compatible = "regulator-fixed";
++		regulator-name = "VREG_RTMR1_1P15";
++		regulator-min-microvolt = <1150000>;
++		regulator-max-microvolt = <1150000>;
++		gpio = <&tlmm 188 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		pinctrl-0 = <&usb1_pwr_1p15_reg_en>;
++		pinctrl-names = "default";
++		regulator-boot-on;
++	};
++
++	vreg_rtmr1_1p8: regulator-rtmr1-1p8 {
++		compatible = "regulator-fixed";
++		regulator-name = "VREG_RTMR1_1P8";
++		regulator-min-microvolt = <1800000>;
++		regulator-max-microvolt = <1800000>;
++		gpio = <&tlmm 175 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		pinctrl-0 = <&usb1_pwr_1p8_reg_en>;
++		pinctrl-names = "default";
++		regulator-boot-on;
++	};
++
++	vreg_rtmr1_3p3: regulator-rtmr1-3p3 {
++		compatible = "regulator-fixed";
++		regulator-name = "VREG_RTMR1_3P3";
++		regulator-min-microvolt = <3300000>;
++		regulator-max-microvolt = <3300000>;
++		gpio = <&tlmm 186 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		pinctrl-0 = <&usb1_pwr_3p3_reg_en>;
++		pinctrl-names = "default";
++		regulator-boot-on;
++	};
++
++	usb-1-ss0-sbu-mux {
++		status = "disabled";
++	};
++
++	usb-1-ss1-sbu-mux {
++		status = "disabled";
++	};
++};
++
++/* Route pmic_glink <-> retimer <-> QMP PHY instead of pmic_glink <-> QMP PHY */
++&pmic_glink_ss0_ss_in {
++	remote-endpoint = <&retimer_ss0_ss_out>;
++};
++
++&pmic_glink_ss1_ss_in {
++	remote-endpoint = <&retimer_ss1_ss_out>;
++};
++
++&usb_1_ss0_qmpphy_out {
++	remote-endpoint = <&retimer_ss0_ss_in>;
++};
++
++&usb_1_ss1_qmpphy_out {
++	remote-endpoint = <&retimer_ss1_ss_in>;
++};
++
++/* USB-C port 0 retimer (ACPI UCS0, I2C4) */
++&i2c3 {
++	clock-frequency = <400000>;
++	status = "okay";
++
++	typec-mux@8 {
++		compatible = "parade,ps8830";
++		reg = <0x08>;
++		clocks = <&rpmhcc RPMH_RF_CLK3>;
++		vdd-supply = <&vreg_rtmr0_1p15>;
++		vdd33-supply = <&vreg_rtmr0_3p3>;
++		vdd33-cap-supply = <&vreg_rtmr0_3p3>;
++		vddar-supply = <&vreg_rtmr0_1p15>;
++		vddat-supply = <&vreg_rtmr0_1p15>;
++		vddio-supply = <&vreg_rtmr0_1p8>;
++		reset-gpios = <&pm8550_gpios 10 GPIO_ACTIVE_LOW>;
++		pinctrl-0 = <&rtmr0_default>;
++		pinctrl-names = "default";
++		retimer-switch;
++		orientation-switch;
++
++		ports {
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			port@0 {
++				reg = <0>;
++				retimer_ss0_ss_out: endpoint {
++					remote-endpoint = <&pmic_glink_ss0_ss_in>;
++				};
++			};
++
++			port@1 {
++				reg = <1>;
++				retimer_ss0_ss_in: endpoint {
++					remote-endpoint = <&usb_1_ss0_qmpphy_out>;
++				};
++			};
++		};
++	};
++};
++
++/* USB-C port 1 retimer (ACPI UCS0, I2C8) */
++&i2c7 {
++	clock-frequency = <400000>;
++	status = "okay";
++
++	typec-mux@8 {
++		compatible = "parade,ps8830";
++		reg = <0x08>;
++		clocks = <&rpmhcc RPMH_RF_CLK4>;
++		vdd-supply = <&vreg_rtmr1_1p15>;
++		vdd33-supply = <&vreg_rtmr1_3p3>;
++		vdd33-cap-supply = <&vreg_rtmr1_3p3>;
++		vddar-supply = <&vreg_rtmr1_1p15>;
++		vddat-supply = <&vreg_rtmr1_1p15>;
++		vddio-supply = <&vreg_rtmr1_1p8>;
++		reset-gpios = <&tlmm 176 GPIO_ACTIVE_LOW>;
++		pinctrl-0 = <&rtmr1_default>;
++		pinctrl-names = "default";
++		retimer-switch;
++		orientation-switch;
++
++		ports {
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			port@0 {
++				reg = <0>;
++				retimer_ss1_ss_out: endpoint {
++					remote-endpoint = <&pmic_glink_ss1_ss_in>;
++				};
++			};
++
++			port@1 {
++				reg = <1>;
++				retimer_ss1_ss_in: endpoint {
++					remote-endpoint = <&usb_1_ss1_qmpphy_out>;
++				};
++			};
++		};
++	};
++};
++
++&pm8550_gpios {
++	rtmr0_default: rtmr0-reset-n-active-state {
++		pins = "gpio10";
++		function = "normal";
++		power-source = <1>; /* 1.8V */
++		bias-disable;
++		input-disable;
++		output-enable;
++	};
++
++	usb0_3p3_reg_en: usb0-3p3-reg-en-state {
++		pins = "gpio11";
++		function = "normal";
++		power-source = <1>; /* 1.8V */
++		bias-disable;
++		input-disable;
++		output-enable;
++	};
++};
++
++&pm8550ve_9_gpios {
++	usb0_1p8_reg_en: usb0-1p8-reg-en-state {
++		pins = "gpio8";
++		function = "normal";
++		power-source = <1>; /* 1.8V */
++		bias-disable;
++		input-disable;
++		output-enable;
++	};
++};
++
++&pmc8380_5_gpios {
++	usb0_pwr_1p15_reg_en: usb0-pwr-1p15-reg-en-state {
++		pins = "gpio8";
++		function = "normal";
++		power-source = <1>; /* 1.8V */
++		bias-disable;
++		input-disable;
++		output-enable;
++	};
++};
++
++&tlmm {
++	rtmr1_default: rtmr1-reset-n-active-state {
++		pins = "gpio176";
++		function = "gpio";
++		drive-strength = <2>;
++		bias-disable;
++	};
++
++	usb1_pwr_1p15_reg_en: usb1-pwr-1p15-reg-en-state {
++		pins = "gpio188";
++		function = "gpio";
++		drive-strength = <2>;
++		bias-disable;
++	};
++
++	usb1_pwr_1p8_reg_en: usb1-pwr-1p8-reg-en-state {
++		pins = "gpio175";
++		function = "gpio";
++		drive-strength = <2>;
++		bias-disable;
++	};
++
++	usb1_pwr_3p3_reg_en: usb1-pwr-3p3-reg-en-state {
++		pins = "gpio186";
++		function = "gpio";
++		drive-strength = <2>;
++		bias-disable;
++	};
++};
+diff --git a/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge.dtsi b/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge.dtsi
+index 892ac4d0d1f7..ca81e0f91dfa 100644
+--- a/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge.dtsi
++++ b/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge.dtsi
+@@ -203,10 +203,10 @@ linux,cma {
+ 	sound {
+ 		compatible = "qcom,x1e80100-sndcard";
+ 		model = "X1E80100-GalaxyBook4Edge";
+-		audio-routing = "WooferLeft IN", "WSA WSA_SPK1 OUT",
+-				"TweeterLeft IN", "WSA WSA_SPK2 OUT",
+-				"WooferRight IN", "WSA2 WSA_SPK1 OUT",
+-				"TweeterRight IN", "WSA2 WSA_SPK2 OUT",
++		audio-routing = "TweeterLeft IN", "WSA WSA_SPK1 OUT",
++				"TweeterRight IN", "WSA WSA_SPK2 OUT",
++				"WooferLeft IN", "WSA2 WSA_SPK1 OUT",
++				"WooferRight IN", "WSA2 WSA_SPK2 OUT",
+ 				"IN1_HPHL", "HPHL_OUT",
+ 				"IN2_HPHR", "HPHR_OUT",
+ 				"AMIC2", "MIC BIAS2",
+@@ -252,9 +252,9 @@ wsa-dai-link {
+ 			link-name = "WSA Playback";
+ 
+ 			codec {
+-				sound-dai = <&left_woofer>, <&left_tweeter>,
++				sound-dai = <&left_tweeter>, <&right_tweeter>,
+ 					    <&swr0 0>, <&lpass_wsamacro 0>,
+-					    <&right_woofer>, <&right_tweeter>,
++					    <&left_woofer>, <&right_woofer>,
+ 					    <&swr3 0>, <&lpass_wsa2macro 0>;
+ 			};
+ 
+@@ -867,6 +867,12 @@ keyboard@5 {
+ 
+ 		wakeup-source;
+ 	};
++
++	/* ENE KB9058 EC: battery state over its mailbox (samsung_galaxybook_battery) */
++	embedded-controller@64 {
++		compatible = "samsung,galaxybook-battery";
++		reg = <0x64>;
++	};
+ };
+ 
+ &i2c5 {
+@@ -874,6 +880,12 @@ &i2c5 {
+ 
+ 	status = "okay";
+ 
++	/* EC (ENE KB9058) command port: keyboard backlight */
++	kbd-backlight@62 {
++		compatible = "samsung,galaxy-book4-edge-kbd-backlight";
++		reg = <0x62>;
++	};
++
+ 	eusb5_repeater: redriver@43 {
+ 		compatible = "nxp,ptn3222";
+ 		reg = <0x43>;
+@@ -929,6 +941,27 @@ &i2c13 {
+ 	status = "okay";
+ };
+ 
++/* USB-C port 0: Samsung S2MM006 PD controller at 0x33 (on the 14", ACPI EMEC IC10) */
++&i2c9 {
++	clock-frequency = <400000>;
++
++	status = "okay";
++};
++
++/* USB-C port 1: Samsung S2MM006 PD controller at 0x33 (on the 14", ACPI EMEC IC16) */
++&i2c15 {
++	clock-frequency = <400000>;
++
++	status = "okay";
++};
++
++/* Charger (ISL9241) at 0x09 and smart battery at 0x0b (on the 14", ACPI EMEC IC21) */
++&i2c20 {
++	clock-frequency = <100000>;
++
++	status = "okay";
++};
++
+ &lpass_tlmm {
+ 	spkr_01_sd_n_active: spkr-01-sd-n-active-state {
+ 		pins = "gpio12";
+@@ -952,7 +985,11 @@ &lpass_vamacro {
+ 	pinctrl-names = "default";
+ 
+ 	vdd-micb-supply = <&vreg_l1b_1p8>;
+-	qcom,dmic-sample-rate = <4800000>;
++	/*
++	 * 2.4 MHz, as the 15.6" Book4 Edge uses: at 4.8 MHz DMIC0 (rising edge of data line 0)
++	 * captures broadband noise at about -16 dBFS; at 2.4 MHz it is as clean as DMIC1 (-68 dBFS idle).
++	 */
++	qcom,dmic-sample-rate = <2400000>;
+ };
+ 
+ &mdss {
+@@ -964,7 +1001,8 @@ &mdss_dp0 {
+ };
+ 
+ &mdss_dp0_out {
+-	data-lanes = <0 1>;
++	/* sb4edge: 4 lanes for DP alt mode pin C (the usbc helper selects it) */
++	data-lanes = <0 1 2 3>;
+ 	link-frequencies = /bits/ 64 <1620000000 2700000000 5400000000 8100000000>;
+ };
+ 
+@@ -973,7 +1011,8 @@ &mdss_dp1 {
+ };
+ 
+ &mdss_dp1_out {
+-	data-lanes = <0 1>;
++	/* sb4edge: 4 lanes for DP alt mode pin C (the usbc helper selects it) */
++	data-lanes = <0 1 2 3>;
+ 	link-frequencies = /bits/ 64 <1620000000 2700000000 5400000000 8100000000>;
+ };
+ 
+@@ -1120,28 +1159,26 @@ &swr0 {
+ 	pinctrl-0 = <&wsa_swr_active>, <&spkr_01_sd_n_active>;
+ 	pinctrl-names = "default";
+ 
+-	/* WSA8845, Left Woofer */
+-	left_woofer: speaker@0,0 {
+-		compatible = "sdw20217020400";
+-		reg = <0 0>;
++	/* WSA8835, Left Tweeter */
++	left_tweeter: speaker@0,1 {
++		compatible = "sdw10217020200";
++		reg = <0 1>;
+ 		reset-gpios = <&lpass_tlmm 12 GPIO_ACTIVE_LOW>;
+ 		#sound-dai-cells = <0>;
+-		sound-name-prefix = "WooferLeft";
+-		vdd-1p8-supply = <&vreg_l15b_1p8>;
+-		vdd-io-supply = <&vreg_l12b_1p2>;
+-		qcom,port-mapping = <1 2 3 7 10 13>;
++		sound-name-prefix = "TweeterLeft";
++		vdd-supply = <&vreg_l15b_1p8>;
++		qcom,port-mapping = <1 2 3 10>;
+ 	};
+ 
+-	/* WSA8845, Left Tweeter */
+-	left_tweeter: speaker@0,1 {
+-		compatible = "sdw20217020400";
+-		reg = <0 1>;
++	/* WSA8835, Right Tweeter */
++	right_tweeter: speaker@0,2 {
++		compatible = "sdw10217020200";
++		reg = <0 2>;
+ 		reset-gpios = <&lpass_tlmm 12 GPIO_ACTIVE_LOW>;
+ 		#sound-dai-cells = <0>;
+-		sound-name-prefix = "TweeterLeft";
+-		vdd-1p8-supply = <&vreg_l15b_1p8>;
+-		vdd-io-supply = <&vreg_l12b_1p2>;
+-		qcom,port-mapping = <4 5 6 7 11 13>;
++		sound-name-prefix = "TweeterRight";
++		vdd-supply = <&vreg_l15b_1p8>;
++		qcom,port-mapping = <4 5 6 11>;
+ 	};
+ };
+ 
+@@ -1173,28 +1210,26 @@ &swr3 {
+ 	pinctrl-0 = <&wsa2_swr_active>, <&spkr_23_sd_n_active>;
+ 	pinctrl-names = "default";
+ 
+-	/* WSA8845, Right Woofer */
+-	right_woofer: speaker@0,0 {
+-		compatible = "sdw20217020400";
+-		reg = <0 0>;
++	/* WSA8835, Left Woofer */
++	left_woofer: speaker@0,1 {
++		compatible = "sdw10217020200";
++		reg = <0 1>;
+ 		reset-gpios = <&lpass_tlmm 13 GPIO_ACTIVE_LOW>;
+ 		#sound-dai-cells = <0>;
+-		sound-name-prefix = "WooferRight";
+-		vdd-1p8-supply = <&vreg_l15b_1p8>;
+-		vdd-io-supply = <&vreg_l12b_1p2>;
+-		qcom,port-mapping = <1 2 3 7 10 13>;
++		sound-name-prefix = "WooferLeft";
++		vdd-supply = <&vreg_l15b_1p8>;
++		qcom,port-mapping = <1 2 3 10>;
+ 	};
+ 
+-	/* WSA8845, Right Tweeter */
+-	right_tweeter: speaker@0,1 {
+-		compatible = "sdw20217020400";
+-		reg = <0 1>;
++	/* WSA8835, Right Woofer */
++	right_woofer: speaker@0,2 {
++		compatible = "sdw10217020200";
++		reg = <0 2>;
+ 		reset-gpios = <&lpass_tlmm 13 GPIO_ACTIVE_LOW>;
+ 		#sound-dai-cells = <0>;
+-		sound-name-prefix = "TweeterRight";
+-		vdd-1p8-supply = <&vreg_l15b_1p8>;
+-		vdd-io-supply = <&vreg_l12b_1p2>;
+-		qcom,port-mapping = <4 5 6 7 11 13>;
++		sound-name-prefix = "WooferRight";
++		vdd-supply = <&vreg_l15b_1p8>;
++		qcom,port-mapping = <4 5 6 11>;
+ 	};
+ };
+ 
+@@ -1503,6 +1538,25 @@ usb_1_ss2_qmpphy_out_dp: endpoint@0 {
+ };
+ 
+ 
++/*
++ * Fingerprint reader (EgisTec 1c7a:05a1, match-on-chip) on usb_2. On the 16" eusb6 drives the
++ * USB-A port (usb_mp_hsphy0), so usb_2 sits behind the otherwise unused eusb5 repeater (TLMM 7).
++ */
++&usb_2 {
++	dr_mode = "host";
++
++	status = "okay";
++};
++
++&usb_2_hsphy {
++	vdd-supply = <&vreg_l2e_0p8>;
++	vdda12-supply = <&vreg_l3e_1p2>;
++
++	phys = <&eusb5_repeater>;
++
++	status = "okay";
++};
++
+ /* MP0 goes to the USB-A port(USB3) and FPC */
+ &usb_mp {
+ 	status = "okay";
+@@ -1527,3 +1581,6 @@ &usb_mp_qmpphy0 {
+ 
+ 	status = "okay";
+ };
++
++/* Camera (cci0/camss/ov02c10): verified on hardware 2026-11-14 (dtbo test boot, ~32 fps at 1080p). */
++#include "x1-samsung-galaxy-book4-edge-camera.dtsi"
+diff --git a/arch/arm64/boot/dts/qcom/x1e84100-samsung-galaxy-book4-edge-16.dts b/arch/arm64/boot/dts/qcom/x1e84100-samsung-galaxy-book4-edge-16.dts
+index 947eea411753..2e8760148784 100644
+--- a/arch/arm64/boot/dts/qcom/x1e84100-samsung-galaxy-book4-edge-16.dts
++++ b/arch/arm64/boot/dts/qcom/x1e84100-samsung-galaxy-book4-edge-16.dts
+@@ -29,3 +29,31 @@ touchpad@50 {
+ &panel {
+ 	compatible = "samsung,atna60cl07", "samsung,atna33xc20";
+ };
++
++/*
++ * SD card reader (16 inch only): SDC2, card detect on TLMM 71 (active low), vmmc L9B 2.9 V, vqmmc L6B 1.8 V.
++ * Verified on hardware 2026-11-15 (dtbo test: UHS-I SDR104 SDHC card).
++ */
++&sdhc_2 {
++	cd-gpios = <&tlmm 71 GPIO_ACTIVE_LOW>;
++	pinctrl-0 = <&sdc2_default &sdc2_card_det_n>;
++	pinctrl-1 = <&sdc2_sleep &sdc2_card_det_n>;
++	pinctrl-names = "default", "sleep";
++	vmmc-supply = <&vreg_l9b_2p9>;
++	vqmmc-supply = <&vreg_l6b_1p8>;
++	bus-width = <4>;
++	no-sdio;
++	no-mmc;
++	status = "okay";
++};
++
++&tlmm {
++	sdc2_card_det_n: sdc2-card-det-state {
++		pins = "gpio71";
++		function = "gpio";
++		drive-strength = <2>;
++		bias-pull-up;
++	};
++};
++
++#include "x1-samsung-galaxy-book4-edge-retimers.dtsi"
+diff --git a/drivers/acpi/platform_profile.c b/drivers/acpi/platform_profile.c
+index b4c91d57f3d4..2db54c031a6d 100644
+--- a/drivers/acpi/platform_profile.c
++++ b/drivers/acpi/platform_profile.c
+@@ -21,6 +21,14 @@
+  * which can wait for callbacks that acquire this lock.
+  */
+ static DEFINE_MUTEX(profile_lock);
++
++/*
++ * /sys/firmware/acpi, where userspace (power-profiles-daemon) looks for the legacy interface. On a
++ * device-tree boot (Snapdragon X laptops) ACPI is disabled and acpi_kobj is NULL, but EC drivers can still
++ * offer profiles, so create the directory here.
++ */
++static struct kobject *pp_kobj;
++static bool pp_kobj_own;
+ /* Serialize registration and sysfs updates without blocking sysfs callbacks. */
+ static DEFINE_MUTEX(profile_registration_lock);
+ static LIST_HEAD(profile_handlers);
+@@ -243,7 +251,7 @@ static ssize_t profile_store(struct device *dev,
+ 			return ret;
+ 	}
+ 
+-	sysfs_notify(acpi_kobj, NULL, "platform_profile");
++	sysfs_notify(pp_kobj, NULL, "platform_profile");
+ 
+ 	return count;
+ }
+@@ -458,7 +466,7 @@ static ssize_t platform_profile_store(struct kobject *kobj,
+ 			return ret;
+ 	}
+ 
+-	sysfs_notify(acpi_kobj, NULL, "platform_profile");
++	sysfs_notify(pp_kobj, NULL, "platform_profile");
+ 
+ 	return count;
+ }
+@@ -493,7 +501,7 @@ void platform_profile_notify(struct device *dev)
+ 	scoped_cond_guard(mutex_intr, return, &profile_lock) {
+ 		_notify_class_profile(dev, NULL);
+ 	}
+-	sysfs_notify(acpi_kobj, NULL, "platform_profile");
++	sysfs_notify(pp_kobj, NULL, "platform_profile");
+ }
+ EXPORT_SYMBOL_GPL(platform_profile_notify);
+ 
+@@ -540,7 +548,7 @@ int platform_profile_cycle(void)
+ 			return err;
+ 	}
+ 
+-	sysfs_notify(acpi_kobj, NULL, "platform_profile");
++	sysfs_notify(pp_kobj, NULL, "platform_profile");
+ 
+ 	return 0;
+ }
+@@ -615,9 +623,9 @@ struct device *platform_profile_register(struct device *dev, const char *name,
+ 	scoped_guard(mutex, &profile_lock)
+ 		list_add_tail(&to_pprof_handler(ppdev)->node, &profile_handlers);
+ 
+-	sysfs_notify(acpi_kobj, NULL, "platform_profile");
++	sysfs_notify(pp_kobj, NULL, "platform_profile");
+ 
+-	err = sysfs_update_group(acpi_kobj, &platform_profile_group);
++	err = sysfs_update_group(pp_kobj, &platform_profile_group);
+ 	if (err)
+ 		goto cleanup_cur;
+ 
+@@ -657,8 +665,8 @@ void platform_profile_remove(struct device *dev)
+ 	ida_free(&platform_profile_ida, pprof->minor);
+ 	device_unregister(&pprof->dev);
+ 
+-	sysfs_notify(acpi_kobj, NULL, "platform_profile");
+-	sysfs_update_group(acpi_kobj, &platform_profile_group);
++	sysfs_notify(pp_kobj, NULL, "platform_profile");
++	sysfs_update_group(pp_kobj, &platform_profile_group);
+ }
+ EXPORT_SYMBOL_GPL(platform_profile_remove);
+ 
+@@ -706,24 +714,39 @@ static int __init platform_profile_init(void)
+ {
+ 	int err;
+ 
+-	if (acpi_disabled)
+-		return -EOPNOTSUPP;
++	if (!acpi_disabled) {
++		pp_kobj = acpi_kobj;
++	} else {
++		pp_kobj = kobject_create_and_add("acpi", firmware_kobj);
++		if (!pp_kobj)
++			return -ENOMEM;
++		pp_kobj_own = true;
++	}
+ 
+ 	err = class_register(&platform_profile_class);
+ 	if (err)
+-		return err;
++		goto err_kobj;
+ 
+-	err = sysfs_create_group(acpi_kobj, &platform_profile_group);
++	err = sysfs_create_group(pp_kobj, &platform_profile_group);
+ 	if (err)
+-		class_unregister(&platform_profile_class);
++		goto err_class;
++
++	return 0;
+ 
++err_class:
++	class_unregister(&platform_profile_class);
++err_kobj:
++	if (pp_kobj_own)
++		kobject_put(pp_kobj);
+ 	return err;
+ }
+ 
+ static void __exit platform_profile_exit(void)
+ {
+-	sysfs_remove_group(acpi_kobj, &platform_profile_group);
++	sysfs_remove_group(pp_kobj, &platform_profile_group);
+ 	class_unregister(&platform_profile_class);
++	if (pp_kobj_own)
++		kobject_put(pp_kobj);
+ }
+ module_init(platform_profile_init);
+ module_exit(platform_profile_exit);
+diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_crtc.c b/drivers/gpu/drm/msm/disp/dpu1/dpu_crtc.c
+index 77a2d1f6700d..1fbd7b3305a8 100644
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_crtc.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_crtc.c
+@@ -303,6 +303,13 @@ static bool dpu_crtc_get_scanout_position(struct drm_crtc *crtc,
+ 
+ 	line = dpu_encoder_get_linecount(encoder);
+ 
++	/*
++	 * sb4edge: with variable refresh (AVR) the front porch runs past VTOTAL until the next frame is triggered;
++	 * report such lines as the end of the nominal front porch (the next frame may start at any moment).
++	 */
++	if (line > vfp_end)
++		line = vfp_end;
++
+ 	if (line < vactive_start)
+ 		line -= vactive_start;
+ 	else if (line > vactive_end)
+diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
+index 0a6be69a3e83..796749798fb7 100644
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c
+@@ -36,6 +36,18 @@
+ #include "dpu_core_irq.h"
+ #include "disp/msm_disp_snapshot.h"
+ 
++/*
++ * sb4edge: variable refresh (AVR) on eDP video mode. Read by the DP connector code as well (msm_vrr_mode).
++ *  0 = off (no vrr_capable property, nothing changes)
++ *  1 = AVR (continuous) while the compositor sets VRR_ENABLED (GNOME: fullscreen windows only)
++ *  2 = same, AVR one-shot mode
++ *  3 = AVR (continuous) whenever the panel is VRR capable: every commit starts a frame at once (up to the mode's
++ *      refresh), and with no commits the panel drops to the EDID minimum ("desktop" VRR)
++ */
++int msm_vrr_mode;
++module_param_named(vrr, msm_vrr_mode, int, 0444);
++MODULE_PARM_DESC(vrr, "sb4edge: eDP variable refresh: 0 off, 1 when VRR_ENABLED, 2 same one-shot, 3 always");
++
+ #define DPU_DEBUG_ENC(e, fmt, ...) DRM_DEBUG_ATOMIC("enc%d " fmt,\
+ 		(e) ? (e)->base.base.id : -1, ##__VA_ARGS__)
+ 
+@@ -2100,6 +2112,35 @@ void dpu_encoder_prepare_for_kickoff(struct drm_encoder *drm_enc)
+ 		dpu_encoder_prep_dsc(dpu_enc, dpu_enc->dsc);
+ }
+ 
++/**
++ * dpu_encoder_get_vrr_min_fps - sb4edge: minimum refresh for AVR, or 0 when VRR is not in use
++ * @drm_enc: encoder
++ *
++ * Non-zero only when msm.vrr is set, the CRTC has VRR_ENABLED and the connector reports
++ * vrr_capable with an EDID refresh range (display_info.monitor_range).
++ */
++u32 dpu_encoder_get_vrr_min_fps(struct drm_encoder *drm_enc)
++{
++	struct dpu_encoder_virt *dpu_enc = to_dpu_encoder_virt(drm_enc);
++	struct drm_connector *conn = dpu_enc->connector;
++	struct drm_object_properties *props;
++	u64 capable = 0;
++	int i;
++
++	if (!msm_vrr_mode || !conn || !conn->vrr_capable_property || !drm_enc->crtc || !drm_enc->crtc->state)
++		return 0;
++	if (msm_vrr_mode != 3 && !drm_enc->crtc->state->vrr_enabled)
++		return 0;
++	/* vrr_capable is immutable: its value lives in the object's property list (no atomic state) */
++	props = conn->base.properties;
++	for (i = 0; props && i < props->count; i++)
++		if (props->properties[i] == conn->vrr_capable_property)
++			capable = props->values[i];
++	if (!capable)
++		return 0;
++	return conn->display_info.monitor_range.min_vfreq;
++}
++
+ /**
+  * dpu_encoder_is_valid_for_commit - check if encode has valid parameters for commit.
+  * @drm_enc:    Pointer to drm encoder structure
+diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.h b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.h
+index 4942097e7613..06f506246ee5 100644
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.h
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.h
+@@ -97,5 +97,7 @@ void dpu_encoder_cleanup_wb_job(struct drm_encoder *drm_enc,
+ 
+ bool dpu_encoder_is_valid_for_commit(struct drm_encoder *drm_enc);
+ 
++u32 dpu_encoder_get_vrr_min_fps(struct drm_encoder *drm_enc);
++
+ void dpu_encoder_start_frame_done_timer(struct drm_encoder *drm_enc);
+ #endif /* __DPU_ENCODER_H__ */
+diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys.h b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys.h
+index 61b22d949454..ac212478affb 100644
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys.h
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys.h
+@@ -185,6 +185,7 @@ struct dpu_encoder_phys {
+ 	struct dpu_kms *dpu_kms;
+ 	struct dpu_hw_cdm_cfg cdm_cfg;
+ 	struct drm_display_mode cached_mode;
++	u32 avr_mode;		/* sb4edge: AVR mode programmed in the INTF */
+ 	struct mutex vblank_ctl_lock;
+ 	enum dpu_enc_split_role split_role;
+ 	enum dpu_intf_mode intf_mode;
+diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys_vid.c b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys_vid.c
+index 2ac517db50fc..15444c573e30 100644
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys_vid.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys_vid.c
+@@ -327,11 +327,56 @@ static void dpu_encoder_phys_vid_setup_timing_engine(
+ 	if (phys_enc->hw_pp->merge_3d)
+ 		phys_enc->hw_pp->merge_3d->ops.setup_3d_mode(phys_enc->hw_pp->merge_3d, intf_cfg.mode_3d);
+ 
++	/* sb4edge: start every mode set with AVR off; prepare_for_kickoff turns it on for VRR */
++	if (phys_enc->hw_intf->ops.avr_ctrl)
++		phys_enc->hw_intf->ops.avr_ctrl(phys_enc->hw_intf, DPU_INTF_AVR_OFF);
++	phys_enc->avr_mode = DPU_INTF_AVR_OFF;
++
+ 	spin_unlock_irqrestore(phys_enc->enc_spinlock, lock_flags);
+ 
+ 	programmable_fetch_config(phys_enc, &timing_params);
+ }
+ 
++extern int msm_vrr_mode;
++
++/*
++ * sb4edge: turn AVR on or off to follow the CRTC's VRR_ENABLED (a property change without a mode set), and
++ * reprogram the minimum refresh. Called before each frame's flush; the INTF flush bit latches the change.
++ */
++static void dpu_encoder_phys_vid_update_avr(struct dpu_encoder_phys *phys_enc)
++{
++	struct dpu_hw_intf *intf = phys_enc->hw_intf;
++	struct dpu_hw_intf_timing_params timing = { 0 };
++	struct drm_display_mode mode;
++	u32 min_fps, fps, want = DPU_INTF_AVR_OFF;
++	unsigned long lock_flags;
++
++	if (!intf || !intf->ops.avr_ctrl || !intf->ops.avr_setup ||
++	    phys_enc->split_role != ENC_ROLE_SOLO)
++		return;
++
++	min_fps = dpu_encoder_get_vrr_min_fps(phys_enc->parent);
++	fps = drm_mode_vrefresh(&phys_enc->cached_mode);
++	if (min_fps && fps > min_fps)
++		want = msm_vrr_mode == 2 ? DPU_INTF_AVR_ONE_SHOT : DPU_INTF_AVR_CONTINUOUS;
++	if (want == phys_enc->avr_mode)
++		return;
++
++	drm_mode_init(&mode, &phys_enc->cached_mode);
++	drm_mode_to_intf_timing_params(phys_enc, &mode, &timing);
++
++	spin_lock_irqsave(phys_enc->enc_spinlock, lock_flags);
++	if (want != DPU_INTF_AVR_OFF)
++		intf->ops.avr_setup(intf, &timing, fps, min_fps);
++	intf->ops.avr_ctrl(intf, want);
++	spin_unlock_irqrestore(phys_enc->enc_spinlock, lock_flags);
++	if (phys_enc->hw_ctl->ops.update_pending_flush_intf)
++		phys_enc->hw_ctl->ops.update_pending_flush_intf(phys_enc->hw_ctl, intf->idx);
++
++	DRM_INFO("sb4edge: intf %d AVR %u (%u..%u Hz)\n", intf->idx - INTF_0, want, min_fps, fps);
++	phys_enc->avr_mode = want;
++}
++
+ static void dpu_encoder_phys_vid_vblank_irq(void *arg)
+ {
+ 	struct dpu_encoder_phys *phys_enc = arg;
+@@ -559,6 +604,8 @@ static void dpu_encoder_phys_vid_prepare_for_kickoff(
+ 	drm_enc = phys_enc->parent;
+ 
+ 	ctl = phys_enc->hw_ctl;
++	if (phys_enc->enable_state == DPU_ENC_ENABLED)
++		dpu_encoder_phys_vid_update_avr(phys_enc);
+ 	if (!ctl->ops.wait_reset_status)
+ 		return;
+ 
+@@ -602,6 +649,9 @@ static void dpu_encoder_phys_vid_disable(struct dpu_encoder_phys *phys_enc)
+ 	}
+ 
+ 	spin_lock_irqsave(phys_enc->enc_spinlock, lock_flags);
++	if (phys_enc->avr_mode && phys_enc->hw_intf->ops.avr_ctrl)
++		phys_enc->hw_intf->ops.avr_ctrl(phys_enc->hw_intf, DPU_INTF_AVR_OFF);
++	phys_enc->avr_mode = DPU_INTF_AVR_OFF;
+ 	phys_enc->hw_intf->ops.enable_timing(phys_enc->hw_intf, 0);
+ 	if (dpu_encoder_phys_vid_is_master(phys_enc))
+ 		dpu_encoder_phys_inc_pending(phys_enc);
+@@ -665,6 +715,9 @@ static void dpu_encoder_phys_vid_handle_post_kickoff(
+ 		phys_enc->hw_intf->ops.enable_timing(phys_enc->hw_intf, 1);
+ 		spin_unlock_irqrestore(phys_enc->enc_spinlock, lock_flags);
+ 		phys_enc->enable_state = DPU_ENC_ENABLED;
++	} else if (phys_enc->avr_mode && phys_enc->hw_intf->ops.avr_trigger) {
++		/* sb4edge: the new frame is flushed, end the extended front porch now */
++		phys_enc->hw_intf->ops.avr_trigger(phys_enc->hw_intf);
+ 	}
+ }
+ 
+diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_intf.c b/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_intf.c
+index ac82b69aedf6..8da030f108dc 100644
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_intf.c
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_intf.c
+@@ -609,6 +609,46 @@ static void dpu_hw_intf_program_intf_cmd_cfg(struct dpu_hw_intf *intf,
+  * @addr: mapped register io address of MDP
+  * @mdss_rev: dpu core's major and minor versions
+  */
++/*
++ * sb4edge: AVR (adaptive variable refresh), the timing engine half of Qualcomm's "Qsync" (from the downstream
++ * SDE driver, sde_hw_intf.c). With AVR on, the vertical front porch is extended until a trigger or until the
++ * frame reaches INTF_AVR_VTOTAL pixels (the minimum refresh rate), so frames start when the compositor commits.
++ */
++static void dpu_hw_intf_avr_setup(struct dpu_hw_intf *intf,
++				  const struct dpu_hw_intf_timing_params *p,
++				  u32 default_fps, u32 min_fps)
++{
++	struct dpu_hw_blk_reg_map *c = &intf->hw;
++	u32 hsync_period, vsync_period, vsync_period_slow;
++
++	hsync_period = p->hsync_pulse_width + p->h_back_porch + p->width + p->h_front_porch;
++	vsync_period = p->vsync_pulse_width + p->v_back_porch + p->height + p->v_front_porch;
++	vsync_period_slow = vsync_period;
++	if (min_fps && default_fps > min_fps)
++		vsync_period_slow += mult_frac(vsync_period, default_fps - min_fps, min_fps);
++
++	DPU_REG_WRITE(c, INTF_AVR_VTOTAL, vsync_period_slow * hsync_period);
++}
++
++static void dpu_hw_intf_avr_ctrl(struct dpu_hw_intf *intf, u32 mode)
++{
++	struct dpu_hw_blk_reg_map *c = &intf->hw;
++	u32 avr_ctrl = 0, avr_mode = 0;
++
++	if (mode != DPU_INTF_AVR_OFF) {
++		avr_ctrl = BIT(0);
++		if (mode == DPU_INTF_AVR_ONE_SHOT)
++			avr_mode = BIT(0) | BIT(8);
++	}
++	DPU_REG_WRITE(c, INTF_AVR_CONTROL, avr_ctrl);
++	DPU_REG_WRITE(c, INTF_AVR_MODE, avr_mode);
++}
++
++static void dpu_hw_intf_avr_trigger(struct dpu_hw_intf *intf)
++{
++	DPU_REG_WRITE(&intf->hw, INTF_AVR_TRIGGER, 0x1);
++}
++
+ struct dpu_hw_intf *dpu_hw_intf_init(struct drm_device *dev,
+ 				     const struct dpu_intf_cfg *cfg,
+ 				     void __iomem *addr,
+@@ -668,5 +708,12 @@ struct dpu_hw_intf *dpu_hw_intf_init(struct drm_device *dev,
+ 	if (mdss_rev->core_major_ver >= 7)
+ 		c->ops.program_intf_cmd_cfg = dpu_hw_intf_program_intf_cmd_cfg;
+ 
++	/* sb4edge: AVR on DP/eDP interfaces (written for X1E80100, DPU 9.2) */
++	if (mdss_rev->core_major_ver >= 9 && cfg->type == INTF_DP) {
++		c->ops.avr_setup = dpu_hw_intf_avr_setup;
++		c->ops.avr_ctrl = dpu_hw_intf_avr_ctrl;
++		c->ops.avr_trigger = dpu_hw_intf_avr_trigger;
++	}
++
+ 	return c;
+ }
+diff --git a/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_intf.h b/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_intf.h
+index badd26305fc9..cac7cbce94b7 100644
+--- a/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_intf.h
++++ b/drivers/gpu/drm/msm/disp/dpu1/dpu_hw_intf.h
+@@ -76,6 +76,9 @@ struct dpu_hw_intf_cmd_mode_cfg {
+  * @vsync_sel:                  Select vsync signal for tear-effect configuration
+  * @disable_autorefresh:        Disable autorefresh if enabled
+  * @program_intf_cmd_cfg:       Program the DPU to interface datapath for command mode
++ * @avr_setup:                  sb4edge: program the AVR (adaptive variable refresh) maximum frame length
++ * @avr_ctrl:                   sb4edge: enable/disable AVR (0 off, 1 continuous, 2 one-shot)
++ * @avr_trigger:                sb4edge: end the extended front porch and start the next frame
+  */
+ struct dpu_hw_intf_ops {
+ 	void (*setup_timing_gen)(struct dpu_hw_intf *intf,
+@@ -112,8 +115,18 @@ struct dpu_hw_intf_ops {
+ 
+ 	void (*program_intf_cmd_cfg)(struct dpu_hw_intf *intf,
+ 				     struct dpu_hw_intf_cmd_mode_cfg *cmd_mode_cfg);
++
++	void (*avr_setup)(struct dpu_hw_intf *intf,
++			  const struct dpu_hw_intf_timing_params *p,
++			  u32 default_fps, u32 min_fps);
++	void (*avr_ctrl)(struct dpu_hw_intf *intf, u32 mode);
++	void (*avr_trigger)(struct dpu_hw_intf *intf);
+ };
+ 
++#define DPU_INTF_AVR_OFF	0
++#define DPU_INTF_AVR_CONTINUOUS	1
++#define DPU_INTF_AVR_ONE_SHOT	2
++
+ struct dpu_hw_intf {
+ 	struct dpu_hw_blk_reg_map hw;
+ 
+diff --git a/drivers/gpu/drm/msm/dp/dp_ctrl.c b/drivers/gpu/drm/msm/dp/dp_ctrl.c
+index 47647fdec9de..8341c0fecb8c 100644
+--- a/drivers/gpu/drm/msm/dp/dp_ctrl.c
++++ b/drivers/gpu/drm/msm/dp/dp_ctrl.c
+@@ -1719,6 +1719,10 @@ static int msm_dp_ctrl_link_train(struct msm_dp_ctrl_private *ctrl,
+ 	if (drm_dp_max_downspread(dpcd))
+ 		encoding[0] |= DP_SPREAD_AMP_0_5;
+ 
++	/* sb4edge: variable refresh: the sink follows the stream's timing instead of the MSA */
++	if (panel->vrr_msa_ignore)
++		encoding[0] |= DP_MSA_TIMING_PAR_IGNORE_EN;
++
+ 	/* config DOWNSPREAD_CTRL and MAIN_LINK_CHANNEL_CODING_SET */
+ 	drm_dp_dpcd_write(ctrl->aux, DP_DOWNSPREAD_CTRL, encoding, 2);
+ 
+diff --git a/drivers/gpu/drm/msm/dp/dp_display.c b/drivers/gpu/drm/msm/dp/dp_display.c
+index c0c150e2c575..19e72b057fe5 100644
+--- a/drivers/gpu/drm/msm/dp/dp_display.c
++++ b/drivers/gpu/drm/msm/dp/dp_display.c
+@@ -56,6 +56,11 @@ struct msm_dp_display_private {
+ 
+ 	struct mutex plugged_lock;
+ 	bool plugged;
++	/*
++	 * sb4edge: the last HPD notification (USB-C HPD bridge) said disconnected. Detect then trusts it:
++	 * the PS8830 retimer, still in DP mode, keeps answering AUX for an adapter that is gone.
++	 */
++	bool hpd_low;
+ 
+ 	struct drm_device *drm_dev;
+ 
+@@ -269,6 +274,37 @@ static int msm_dp_display_lttpr_init(struct msm_dp_display_private *dp, u8 *dpcd
+ 	return lttpr_count;
+ }
+ 
++/*
++ * sb4edge: EDID block reader for DP branch devices (DP-to-HDMI adapters) that cannot read EDID blocks
++ * past the first segment; see below.
++ */
++static int msm_dp_read_edid_block(void *data, u8 *buf, unsigned int block, size_t len)
++{
++	struct i2c_adapter *ddc = data;
++	u8 seg = block >> 1, off = (block & 1) * EDID_LENGTH;
++	struct i2c_msg m[3] = {
++		{ .addr = 0x30, .flags = 0, .len = 1, .buf = &seg },
++		{ .addr = 0x50, .flags = 0, .len = 1, .buf = &off },
++		{ .addr = 0x50, .flags = I2C_M_RD, .len = len, .buf = buf },
++	};
++	int n = seg ? 3 : 2, i;
++
++	for (i = 0; i < 3; i++)
++		if (i2c_transfer(ddc, &m[3 - n], n) == n)
++			return 0;
++	if (seg) {
++		/*
++		 * The adapter NACKs the E-DDC segment pointer (0x30), so blocks 2+ (HF-EEODB EDIDs, e.g. the
++		 * Odyssey G95NC: 384 bytes) cannot be read. Hand back a zero block: DRM drops it as invalid
++		 * and keeps the base and CTA blocks instead of failing the whole EDID.
++		 */
++		pr_info_once("sb4edge: DP adapter rejects EDID segment pointer, ignoring blocks 2+\n");
++		memset(buf, 0, len);
++		return 0;
++	}
++	return -EIO;
++}
++
+ static int msm_dp_display_process_hpd_high(struct msm_dp_display_private *dp)
+ {
+ 	struct drm_connector *connector = dp->msm_dp_display.connector;
+@@ -283,11 +319,29 @@ static int msm_dp_display_process_hpd_high(struct msm_dp_display_private *dp)
+ 
+ 	dp->link->lttpr_count = msm_dp_display_lttpr_init(dp, dpcd);
+ 
++	/*
++	 * sb4edge: a DP-to-HDMI adapter (branch device) behind USB-C answers DPCD while powered down, but
++	 * counts its monitor and passes the EDID through only once it is in D0. Wake it and wait for the
++	 * sink before reading the link caps (sink count) and the EDID.
++	 */
++	if (drm_dp_is_branch(dpcd)) {
++		int i;
++
++		drm_dp_dpcd_write_byte(dp->aux, DP_SET_POWER, DP_SET_POWER_D0);
++		for (i = 0; i < 20 && drm_dp_read_sink_count(dp->aux) <= 0; i++)
++			msleep(50);
++	}
++
+ 	rc = msm_dp_panel_read_link_caps(dp->panel, connector);
+ 	if (rc)
+ 		goto end;
+ 
+ 	drm_edid = drm_edid_read_ddc(connector, &dp->aux->ddc);
++	if (!drm_edid && drm_dp_is_branch(dpcd)) {
++		drm_edid = drm_edid_read_custom(connector, msm_dp_read_edid_block, &dp->aux->ddc);
++		drm_info(dp->drm_dev, "sb4edge: branch device EDID (first segment only): %s\n",
++			 drm_edid ? "ok" : "failed");
++	}
+ 	drm_edid_connector_update(connector, drm_edid);
+ 
+ 	if (!drm_edid) {
+@@ -307,6 +361,22 @@ static int msm_dp_display_process_hpd_high(struct msm_dp_display_private *dp)
+ 
+ 	dp->msm_dp_display.psr_supported = dp->panel->psr_cap.version && psr_enabled;
+ 
++	/*
++	 * sb4edge: variable refresh needs a sink that can ignore the MSA timing (DPCD 0x007 bit 6; the stream's
++	 * front porch then varies) and an EDID refresh range. The DPU side (AVR) runs only while the compositor
++	 * sets VRR_ENABLED.
++	 */
++	if (connector->vrr_capable_property) {
++		bool vrr = (dpcd[DP_DOWN_STREAM_PORT_COUNT] & DP_MSA_TIMING_PAR_IGNORED) &&
++			   info->monitor_range.min_vfreq &&
++			   info->monitor_range.max_vfreq > info->monitor_range.min_vfreq;
++
++		dp->panel->vrr_msa_ignore = vrr;
++		drm_connector_set_vrr_capable_property(connector, vrr);
++		drm_info(dp->drm_dev, "sb4edge: vrr_capable %d (%u-%u Hz)\n", vrr,
++			   info->monitor_range.min_vfreq, info->monitor_range.max_vfreq);
++	}
++
+ 	dp->audio_supported = info->has_audio;
+ 	msm_dp_panel_handle_sink_request(dp->panel, drm_edid);
+ 
+@@ -912,6 +982,8 @@ enum drm_connector_status msm_dp_bridge_detect(struct drm_bridge *bridge,
+ 	priv = container_of(dp, struct msm_dp_display_private, msm_dp_display);
+ 
+ 	guard(mutex)(&priv->plugged_lock);
++	if (priv->hpd_low && !dp->is_edp)
++		return status;
+ 	ret = pm_runtime_resume_and_get(&dp->pdev->dev);
+ 	if (ret) {
+ 		DRM_ERROR("failed to pm_runtime_resume\n");
+@@ -1613,6 +1685,7 @@ void msm_dp_bridge_hpd_notify(struct drm_bridge *bridge,
+ 	}
+ 
+ 	hpd_link_status = msm_dp_aux_is_link_connected(dp->aux);
++	WRITE_ONCE(dp->hpd_low, status != connector_status_connected);
+ 
+ 	drm_dbg_dp(dp->drm_dev, "type=%d link hpd_link_status=0x%x, status=%d\n",
+ 		   msm_dp_display->connector_type, hpd_link_status, status);
+diff --git a/drivers/gpu/drm/msm/dp/dp_drm.c b/drivers/gpu/drm/msm/dp/dp_drm.c
+index c1e4147bfef1..5c07286d9487 100644
+--- a/drivers/gpu/drm/msm/dp/dp_drm.c
++++ b/drivers/gpu/drm/msm/dp/dp_drm.c
+@@ -359,6 +359,8 @@ int msm_dp_bridge_init(struct msm_dp *msm_dp_display, struct drm_device *dev,
+ }
+ 
+ /* connector initialization */
++extern int msm_vrr_mode;
++
+ struct drm_connector *msm_dp_drm_connector_init(struct msm_dp *msm_dp_display,
+ 					    struct drm_encoder *encoder)
+ {
+@@ -371,5 +373,9 @@ struct drm_connector *msm_dp_drm_connector_init(struct msm_dp *msm_dp_display,
+ 	if (!msm_dp_display->is_edp)
+ 		drm_connector_attach_dp_subconnector_property(connector);
+ 
++	/* sb4edge: variable refresh (msm.vrr), eDP only; the value is set at HPD from DPCD and EDID */
++	if (msm_vrr_mode && msm_dp_display->is_edp)
++		drm_connector_attach_vrr_capable_property(connector);
++
+ 	return connector;
+ }
+diff --git a/drivers/gpu/drm/msm/dp/dp_panel.h b/drivers/gpu/drm/msm/dp/dp_panel.h
+index dc046fec24fc..85b88b932664 100644
+--- a/drivers/gpu/drm/msm/dp/dp_panel.h
++++ b/drivers/gpu/drm/msm/dp/dp_panel.h
+@@ -39,6 +39,7 @@ enum msm_dp_stream_id {
+ struct msm_dp_panel {
+ 	/* dpcd raw data */
+ 	u8 dpcd[DP_RECEIVER_CAP_SIZE];
++	bool vrr_msa_ignore;	/* sb4edge: VRR in use, sink told to ignore MSA timing */
+ 	u8 downstream_ports[DP_MAX_DOWNSTREAM_PORTS];
+ 
+ 	struct msm_dp_link_info link_info;
+diff --git a/drivers/media/i2c/ov02c10.c b/drivers/media/i2c/ov02c10.c
+index 296f09860dc5..61bcafe9127d 100644
+--- a/drivers/media/i2c/ov02c10.c
++++ b/drivers/media/i2c/ov02c10.c
+@@ -15,7 +15,7 @@
+ #include <media/v4l2-fwnode.h>
+ 
+ #define OV02C10_LINK_FREQ_400MHZ	400000000ULL
+-#define OV02C10_MCLK			19200000
++#define OV02C10_LINK_FREQ_333MHZ	333125000ULL
+ #define OV02C10_RGB_DEPTH		10
+ 
+ #define OV02C10_REG_CHIP_ID		CCI_REG24(0x300a)
+@@ -338,8 +338,44 @@ static const char * const ov02c10_test_pattern_menu[] = {
+ 	"Color Bar type 4",
+ };
+ 
+-static const s64 link_freq_menu_items[] = {
+-	OV02C10_LINK_FREQ_400MHZ,
++/*
++ * The mode tables are written for a 19.2 MHz input clock. Modules with a
++ * 26 MHz oscillator keep the 19.2 MHz MIPI clock limits by running the MIPI
++ * PLL at 26 / 6 * 369 MHz (333.125 MHz link) and leave the system PLL at its
++ * 0x140 default, as the Windows driver for the Samsung Galaxy Book4 Edge does.
++ */
++static const struct reg_sequence ov02c10_26mhz_2lane_pll[] = {
++	{0x0303, 0x06},
++	{0x0304, 0x01},
++	{0x0305, 0x71},
++	{0x0316, 0x40},
++	{0x4837, 0x14},
++};
++
++struct ov02c10_clk_cfg {
++	u32 mclk;
++	s64 link_freq;
++	/* 0: derived from the link frequency */
++	u64 pixel_rate;
++	const struct reg_sequence *pll;
++	unsigned int pll_length;
++	/* PLL settings only exist for this many lanes, 0 for any */
++	u8 lanes;
++};
++
++static const struct ov02c10_clk_cfg ov02c10_clk_cfgs[] = {
++	{
++		.mclk = 19200000,
++		.link_freq = OV02C10_LINK_FREQ_400MHZ,
++	},
++	{
++		.mclk = 26000000,
++		.link_freq = OV02C10_LINK_FREQ_333MHZ,
++		.pixel_rate = 173333333,
++		.pll = ov02c10_26mhz_2lane_pll,
++		.pll_length = ARRAY_SIZE(ov02c10_26mhz_2lane_pll),
++		.lanes = 2,
++	},
+ };
+ 
+ static const struct ov02c10_mode supported_modes[] = {
+@@ -383,11 +419,11 @@ struct ov02c10 {
+ 	struct v4l2_ctrl *exposure;
+ 
+ 	struct clk *img_clk;
++	const struct ov02c10_clk_cfg *clk_cfg;
+ 	struct gpio_desc *reset;
+ 	struct regulator_bulk_data supplies[ARRAY_SIZE(ov02c10_supply_names)];
+ 
+ 	/* MIPI lane info */
+-	u32 link_freq_index;
+ 	u8 mipi_lanes;
+ };
+ 
+@@ -500,14 +536,16 @@ static int ov02c10_init_controls(struct ov02c10 *ov02c10)
+ 	ov02c10->link_freq = v4l2_ctrl_new_int_menu(ctrl_hdlr,
+ 						    &ov02c10_ctrl_ops,
+ 						    V4L2_CID_LINK_FREQ,
+-						    ov02c10->link_freq_index, 0,
+-						    link_freq_menu_items);
++						    0, 0,
++						    &ov02c10->clk_cfg->link_freq);
+ 	if (ov02c10->link_freq)
+ 		ov02c10->link_freq->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+ 
+ 	/* MIPI lanes are DDR -> use link-freq * 2 */
+-	pixel_rate = div_u64(link_freq_menu_items[ov02c10->link_freq_index] *
+-			     2 * ov02c10->mipi_lanes, OV02C10_RGB_DEPTH);
++	pixel_rate = ov02c10->clk_cfg->pixel_rate;
++	if (!pixel_rate)
++		pixel_rate = div_u64(ov02c10->clk_cfg->link_freq *
++				     2 * ov02c10->mipi_lanes, OV02C10_RGB_DEPTH);
+ 
+ 	ov02c10->pixel_rate = v4l2_ctrl_new_std(ctrl_hdlr, &ov02c10_ctrl_ops,
+ 						V4L2_CID_PIXEL_RATE, 0,
+@@ -612,6 +650,13 @@ static int ov02c10_enable_streams(struct v4l2_subdev *sd,
+ 		goto out;
+ 	}
+ 
++	ret = regmap_multi_reg_write(ov02c10->regmap, ov02c10->clk_cfg->pll,
++				     ov02c10->clk_cfg->pll_length);
++	if (ret) {
++		dev_err(ov02c10->dev, "failed to write pll settings\n");
++		goto out;
++	}
++
+ 	ret = __v4l2_ctrl_handler_setup(ov02c10->sd.ctrl_handler);
+ 	if (ret)
+ 		goto out;
+@@ -835,15 +880,11 @@ static int ov02c10_check_hwcfg(struct ov02c10 *ov02c10)
+ 
+ 	ret = v4l2_link_freq_to_bitmap(dev, bus_cfg.link_frequencies,
+ 				       bus_cfg.nr_of_link_frequencies,
+-				       link_freq_menu_items,
+-				       ARRAY_SIZE(link_freq_menu_items),
++				       &ov02c10->clk_cfg->link_freq, 1,
+ 				       &link_freq_bitmap);
+ 	if (ret)
+ 		goto check_hwcfg_error;
+ 
+-	/* v4l2_link_freq_to_bitmap() guarantees at least 1 bit is set */
+-	ov02c10->link_freq_index = ffs(link_freq_bitmap) - 1;
+-
+ 	if (bus_cfg.bus.mipi_csi2.num_data_lanes != 1 &&
+ 	    bus_cfg.bus.mipi_csi2.num_data_lanes != 2) {
+ 		ret = dev_err_probe(dev, -EINVAL,
+@@ -854,6 +895,12 @@ static int ov02c10_check_hwcfg(struct ov02c10 *ov02c10)
+ 
+ 	ov02c10->mipi_lanes = bus_cfg.bus.mipi_csi2.num_data_lanes;
+ 
++	if (ov02c10->clk_cfg->lanes &&
++	    ov02c10->clk_cfg->lanes != ov02c10->mipi_lanes)
++		ret = dev_err_probe(dev, -EINVAL,
++				    "%u lanes are not supported with a %u Hz clock\n",
++				    ov02c10->mipi_lanes, ov02c10->clk_cfg->mclk);
++
+ check_hwcfg_error:
+ 	v4l2_fwnode_endpoint_free(&bus_cfg);
+ 	return ret;
+@@ -879,6 +926,7 @@ static int ov02c10_probe(struct i2c_client *client)
+ {
+ 	struct ov02c10 *ov02c10;
+ 	unsigned long freq;
++	unsigned int i;
+ 	int ret;
+ 
+ 	ov02c10 = devm_kzalloc_obj(&client->dev, *ov02c10);
+@@ -893,7 +941,10 @@ static int ov02c10_probe(struct i2c_client *client)
+ 				     "failed to get imaging clock\n");
+ 
+ 	freq = clk_get_rate(ov02c10->img_clk);
+-	if (freq != OV02C10_MCLK)
++	for (i = 0; i < ARRAY_SIZE(ov02c10_clk_cfgs); i++)
++		if (ov02c10_clk_cfgs[i].mclk == freq)
++			ov02c10->clk_cfg = &ov02c10_clk_cfgs[i];
++	if (!ov02c10->clk_cfg)
+ 		return dev_err_probe(ov02c10->dev, -EINVAL,
+ 				     "external clock %lu is not supported",
+ 				     freq);
+diff --git a/drivers/soc/qcom/pmic_glink_altmode.c b/drivers/soc/qcom/pmic_glink_altmode.c
+index 9fd077737e9f..cbc35e39e738 100644
+--- a/drivers/soc/qcom/pmic_glink_altmode.c
++++ b/drivers/soc/qcom/pmic_glink_altmode.c
+@@ -121,6 +121,8 @@ struct pmic_glink_altmode_port {
+ 	u8 hpd_state;
+ 	u8 hpd_irq;
+ 	u8 mux_ctrl;
++	/* sb4edge: state set from userspace, not by the ADSP: no PAN_ACK */
++	bool injected;
+ };
+ 
+ #define work_to_altmode(w) container_of((w), struct pmic_glink_altmode, enable_work)
+@@ -390,7 +392,10 @@ static void pmic_glink_altmode_worker(struct work_struct *work)
+ 		pmic_glink_altmode_safe(altmode, alt_port);
+ 	}
+ 
+-	pmic_glink_altmode_request(altmode, ALTMODE_PAN_ACK, alt_port->index);
++	if (alt_port->injected)
++		alt_port->injected = false;
++	else
++		pmic_glink_altmode_request(altmode, ALTMODE_PAN_ACK, alt_port->index);
+ }
+ 
+ static enum typec_orientation pmic_glink_altmode_orientation(unsigned int orientation)
+@@ -505,6 +510,90 @@ static void pmic_glink_altmode_sc8280xp_notify(struct pmic_glink_altmode *altmod
+ 	queue_work(system_freezable_wq, &alt_port->work);
+ }
+ 
++/*
++ * sb4edge: on the Samsung Galaxy Book4 Edge the USB-C ports have Samsung S2MM006 PD controllers that talk to
++ * Windows' EmuEC.sys, not to the ADSP, so no USBC_NOTIFY_IND ever arrives. The usbc helper reads the alt mode
++ * state from the controllers and hands it in here, so the mux, retimer and DP HPD bridge follow it:
++ *
++ *   echo "<port> <normal|reverse|none> safe" > inject
++ *   echo "<port> <normal|reverse|none> usb" > inject
++ *   echo "<port> <normal|reverse|none> dp <A-F> <hpd 0|1> <irq 0|1>" > inject
++ */
++static ssize_t inject_store(struct device *dev, struct device_attribute *attr,
++			    const char *buf, size_t count)
++{
++	struct pmic_glink_altmode *altmode = dev_get_drvdata(dev);
++	struct pmic_glink_altmode_port *alt_port;
++	char orient[8], state[8], pin = 0;
++	unsigned int port, hpd = 0, irq = 0;
++	enum typec_orientation orientation;
++	int n;
++
++	n = sscanf(buf, "%u %7s %7s %c %u %u", &port, orient, state, &pin, &hpd, &irq);
++	if (n < 3 || port >= ARRAY_SIZE(altmode->ports) || !altmode->ports[port].altmode)
++		return -EINVAL;
++	alt_port = &altmode->ports[port];
++
++	flush_work(&alt_port->work);
++	if (!strcmp(orient, "normal"))
++		orientation = TYPEC_ORIENTATION_NORMAL;
++	else if (!strcmp(orient, "reverse"))
++		orientation = TYPEC_ORIENTATION_REVERSE;
++	else if (!strcmp(orient, "none"))
++		orientation = TYPEC_ORIENTATION_NONE;
++	else
++		return -EINVAL;
++
++	if (!strcmp(state, "dp")) {
++		u8 mux;
++
++		if (n < 6 || pin < 'A' || pin > 'F')
++			return -EINVAL;
++		mux = (pin == 'D' || pin == 'F') ? MUX_CTRL_STATE_USB3_DP : MUX_CTRL_STATE_DP4LN;
++		/*
++		 * Lanes already in this DP mode: only pass the HPD change on. Setting the mux and retimer
++		 * again resets the AUX path for a moment, and msm reads the sink count and EDID right
++		 * after the HPD notification.
++		 */
++		if (alt_port->svid == USB_TYPEC_DP_SID && alt_port->mux_ctrl == mux &&
++		    alt_port->mode == pin - 'A' && alt_port->orientation == orientation) {
++			alt_port->hpd_state = !!hpd;
++			alt_port->hpd_irq = !!irq;
++			drm_aux_hpd_bridge_notify(&alt_port->bridge->dev, hpd ? connector_status_connected :
++						  connector_status_disconnected);
++			return count;
++		}
++		alt_port->svid = USB_TYPEC_DP_SID;
++		alt_port->mux_ctrl = mux;
++		alt_port->mode = pin - 'A';
++		alt_port->hpd_state = !!hpd;
++		alt_port->hpd_irq = !!irq;
++	} else if (!strcmp(state, "usb")) {
++		alt_port->svid = 0;
++		alt_port->mux_ctrl = MUX_CTRL_STATE_USB3_ONLY;
++	} else if (!strcmp(state, "safe")) {
++		/* a DP partner that went away still needs its HPD dropped */
++		if (alt_port->svid == USB_TYPEC_DP_SID)
++			alt_port->hpd_state = 0;
++		alt_port->mux_ctrl = MUX_CTRL_STATE_NO_CONN;
++	} else {
++		return -EINVAL;
++	}
++	alt_port->orientation = orientation;
++	alt_port->injected = true;
++	queue_work(system_freezable_wq, &alt_port->work);
++	flush_work(&alt_port->work);
++	if (!strcmp(state, "safe"))
++		alt_port->svid = 0;
++	return count;
++}
++static DEVICE_ATTR_WO(inject);
++
++static void pmic_glink_altmode_remove_inject(void *data)
++{
++	device_remove_file(data, &dev_attr_inject);
++}
++
+ static void pmic_glink_altmode_callback(const void *data, size_t len, void *priv)
+ {
+ 	struct pmic_glink_altmode *altmode = priv;
+@@ -687,6 +776,14 @@ static int pmic_glink_altmode_probe(struct auxiliary_device *adev,
+ 			return ret;
+ 	}
+ 
++	dev_set_drvdata(dev, altmode);
++	ret = device_create_file(dev, &dev_attr_inject);
++	if (ret)
++		return ret;
++	ret = devm_add_action_or_reset(dev, pmic_glink_altmode_remove_inject, dev);
++	if (ret)
++		return ret;
++
+ 	altmode->client = devm_pmic_glink_client_alloc(dev,
+ 						       altmode->owner_id,
+ 						       pmic_glink_altmode_callback,
+diff --git a/sound/soc/qcom/qdsp6/audioreach.c b/sound/soc/qcom/qdsp6/audioreach.c
+index d2dc5d37bccf..56787b6da224 100644
+--- a/sound/soc/qcom/qdsp6/audioreach.c
++++ b/sound/soc/qcom/qdsp6/audioreach.c
+@@ -1491,7 +1491,7 @@ int audioreach_set_media_format(struct q6apm_graph *graph,
+ 		rc = audioreach_display_port_set_media_format(graph, module, cfg);
+ 		break;
+ 	case  MODULE_ID_SMECNS_V2:
+-		rc = audioreach_set_module_config(graph, module, cfg);
++		rc = module->data ? audioreach_set_module_config(graph, module, cfg) : 0;
+ 		break;
+ 	case MODULE_ID_I2S_SOURCE:
+ 	case MODULE_ID_I2S_SINK:
+@@ -1537,7 +1537,11 @@ int audioreach_set_media_format(struct q6apm_graph *graph,
+ 		break;
+ 
+ 	default:
+-		rc = 0;
++		/*
++		 * Any other module (e.g. a voice-processing module) gets the raw APM parameter blob the
++		 * topology carries for it (SND_SOC_AR_TPLG_MODULE_CFG_TYPE), if any.
++		 */
++		rc = module->data ? audioreach_set_module_config(graph, module, cfg) : 0;
+ 	}
+ 
+ 	return rc;
+diff --git a/sound/soc/qcom/x1e80100.c b/sound/soc/qcom/x1e80100.c
+index c927672eaede..56b356f32e55 100644
+--- a/sound/soc/qcom/x1e80100.c
++++ b/sound/soc/qcom/x1e80100.c
+@@ -3,6 +3,7 @@
+ 
+ #include <dt-bindings/sound/qcom,q6afe.h>
+ #include <linux/module.h>
++#include <linux/of.h>
+ #include <linux/platform_device.h>
+ #include <linux/soundwire/sdw.h>
+ #include <sound/pcm.h>
+@@ -30,6 +31,7 @@ static int x1e80100_snd_init(struct snd_soc_pcm_runtime *rtd)
+ 	struct snd_soc_card *card = rtd->card;
+ 	struct snd_soc_jack *dp_jack = NULL;
+ 	int dp_pcm_id = 0;
++	int digital_max = 81, pa_max = 6;
+ 
+ 	switch (cpu_dai->id) {
+ 	case WSA_CODEC_DMA_RX_0:
+@@ -39,16 +41,26 @@ static int x1e80100_snd_init(struct snd_soc_pcm_runtime *rtd)
+ 		 * to reduce the risk of speaker damage until we have active
+ 		 * speaker protection in place.
+ 		 */
+-		snd_soc_limit_volume(card, "WSA WSA_RX0 Digital Volume", 81);
+-		snd_soc_limit_volume(card, "WSA WSA_RX1 Digital Volume", 81);
+-		snd_soc_limit_volume(card, "WSA2 WSA_RX0 Digital Volume", 81);
+-		snd_soc_limit_volume(card, "WSA2 WSA_RX1 Digital Volume", 81);
+-		snd_soc_limit_volume(card, "SpkrLeft PA Volume", 6);
+-		snd_soc_limit_volume(card, "SpkrRight PA Volume", 6);
+-		snd_soc_limit_volume(card, "WooferLeft PA Volume", 6);
+-		snd_soc_limit_volume(card, "TweeterLeft PA Volume", 6);
+-		snd_soc_limit_volume(card, "WooferRight PA Volume", 6);
+-		snd_soc_limit_volume(card, "TweeterRight PA Volume", 6);
++		/*
++		 * The Samsung Galaxy Book4 Edge has WSA883x amplifiers, where PA
++		 * Volume 6 is -3 dB and 17 is 0 dB (the cap sc8280xp uses for the
++		 * same amplifiers); with 6 the speakers play at about half the
++		 * Windows loudness. Digital Volume is allowed up to 0 dB (84).
++		 */
++		if (of_machine_is_compatible("samsung,galaxy-book4-edge")) {
++			digital_max = 84;
++			pa_max = 17;
++		}
++		snd_soc_limit_volume(card, "WSA WSA_RX0 Digital Volume", digital_max);
++		snd_soc_limit_volume(card, "WSA WSA_RX1 Digital Volume", digital_max);
++		snd_soc_limit_volume(card, "WSA2 WSA_RX0 Digital Volume", digital_max);
++		snd_soc_limit_volume(card, "WSA2 WSA_RX1 Digital Volume", digital_max);
++		snd_soc_limit_volume(card, "SpkrLeft PA Volume", pa_max);
++		snd_soc_limit_volume(card, "SpkrRight PA Volume", pa_max);
++		snd_soc_limit_volume(card, "WooferLeft PA Volume", pa_max);
++		snd_soc_limit_volume(card, "TweeterLeft PA Volume", pa_max);
++		snd_soc_limit_volume(card, "WooferRight PA Volume", pa_max);
++		snd_soc_limit_volume(card, "TweeterRight PA Volume", pa_max);
+ 		break;
+ 	case DISPLAY_PORT_RX_0:
+ 		dp_pcm_id = 0;
+@@ -102,6 +114,13 @@ static int x1e80100_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
+ 	case TX_CODEC_DMA_TX_3:
+ 		channels->min = 1;
+ 		break;
++	case VA_CODEC_DMA_TX_0:
++		/*
++		 * The VA DMIC graph only starts with all four slots; the DSP stream MFC converts to what the
++		 * front end asked for (e.g. two channels for a dual-mic noise suppressor).
++		 */
++		channels->min = channels->max = 4;
++		break;
+ 	default:
+ 		break;
+ 	}

@@ -1,0 +1,3 @@
+# sb4edge: extra HDMI modes for monitors whose best modes need more than the HDMI converter's link (see
+# /usr/lib/sb4edge/sb4edge-hdmi-edid). Runs on DRM hotplug events.
+ACTION=="change", SUBSYSTEM=="drm", KERNEL=="card1", ENV{HOTPLUG}=="1", RUN+="/usr/lib/sb4edge/sb4edge-hdmi-edid"

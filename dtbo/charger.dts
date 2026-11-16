@@ -1,0 +1,7 @@
+/dts-v1/;
+/plugin/;
+/* Charger (ISL9241 @0x09) and smart battery (@0x0b) bus, ACPI EMEC IC21 */
+&{/soc@0/geniqup@8c0000/i2c@890000} {
+	clock-frequency = <100000>;
+	status = "okay";
+};

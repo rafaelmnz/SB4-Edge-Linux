@@ -1,0 +1,9 @@
+--- a/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge.dtsi
++++ b/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge.dtsi
+@@ -1580,5 +1580,5 @@
+ };
+ 
+-/* Camera (cci0/camss/ov02c10): disabled until tested; a boot with it hung (2026-11-14). */
+-/* #include "x1-samsung-galaxy-book4-edge-camera.dtsi" */
++/* Camera (cci0/camss/ov02c10): verified on hardware 2026-11-14 (dtbo test boot, ~32 fps at 1080p). */
++#include "x1-samsung-galaxy-book4-edge-camera.dtsi"

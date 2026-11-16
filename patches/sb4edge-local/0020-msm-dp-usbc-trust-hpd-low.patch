@@ -1,0 +1,31 @@
+--- a/drivers/gpu/drm/msm/dp/dp_display.c
++++ b/drivers/gpu/drm/msm/dp/dp_display.c
+@@ -56,6 +56,11 @@
+ 
+ 	struct mutex plugged_lock;
+ 	bool plugged;
++	/*
++	 * sb4edge: the last HPD notification (USB-C HPD bridge) said disconnected. Detect then trusts it:
++	 * the PS8830 retimer, still in DP mode, keeps answering AUX for an adapter that is gone.
++	 */
++	bool hpd_low;
+ 
+ 	struct drm_device *drm_dev;
+ 
+@@ -977,6 +982,8 @@
+ 	priv = container_of(dp, struct msm_dp_display_private, msm_dp_display);
+ 
+ 	guard(mutex)(&priv->plugged_lock);
++	if (priv->hpd_low && !dp->is_edp)
++		return status;
+ 	ret = pm_runtime_resume_and_get(&dp->pdev->dev);
+ 	if (ret) {
+ 		DRM_ERROR("failed to pm_runtime_resume\n");
+@@ -1678,6 +1685,7 @@
+ 	}
+ 
+ 	hpd_link_status = msm_dp_aux_is_link_connected(dp->aux);
++	WRITE_ONCE(dp->hpd_low, status != connector_status_connected);
+ 
+ 	drm_dbg_dp(dp->drm_dev, "type=%d link hpd_link_status=0x%x, status=%d\n",
+ 		   msm_dp_display->connector_type, hpd_link_status, status);

@@ -1,0 +1,25 @@
+# "Microphone (Fluence)": the internal mics through Samsung's EQ + Qualcomm Fluence noise suppression on the ADSP
+# (topology MultiMedia8, hw:<card>,7; 16 kHz stereo only, Fluence NN is a 16 kHz algorithm). Needs
+# sb4edge-fluence.service (the DSP fetches the Fluence modules through it). The DMIC routing comes from the UCM
+# "Mic" device, which the default HiFi profile enables; MultiMedia8's mixer is set by the UCM verb.
+# Not a UCM device on purpose: PipeWire's UCM profiles would make it exclusive with "Internal microphones".
+# Default input (priority above "Microphone (noise suppression)"); the others stay selectable in Settings.
+context.objects = [
+  { factory = adapter
+    args = {
+      factory.name     = api.alsa.pcm.source
+      node.name        = "sb4edge_fluence"
+      node.description = "Microphone (Fluence)"
+      media.class      = "Audio/Source"
+      api.alsa.path    = "hw:X1E80100GalaxyB,7"
+      audio.format     = "S16LE"
+      audio.rate       = 16000
+      audio.channels   = 2
+      audio.position   = [ FL FR ]
+      priority.session = 3500
+      priority.driver  = 3500
+      node.pause-on-idle = true
+      session.suspend-timeout-seconds = 3
+    }
+  }
+]

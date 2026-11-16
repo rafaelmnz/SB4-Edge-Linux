@@ -1,0 +1,3 @@
+From https://github.com/Saddytech/Galaxy-Book4-Edge-linux driver/, commit 1c7b0ce0b5963c2893d1a1a0030d8aa8bd8cfc1c (2026-08-17), unmodified.
+Modified for sb4edge: design and full-charge capacity words swapped (verified against the smart battery on the 16").
+Modified for sb4edge: charge_control_end_threshold via EC mailbox command 0xE9 (reverse engineered from Windows EmuEC.sys 7.22.18.735 / EC2.sys 15.27.1.994), with EC2's idle-wait and slot handshake.

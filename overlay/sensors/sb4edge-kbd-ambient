@@ -1,0 +1,115 @@
+#!/usr/bin/python3
+"""Keyboard backlight follows the ambient light sensor, as on Windows (Samsung Galaxy Book4 Edge).
+
+Runs in the user session (systemd user service), reads lux from iio-sensor-proxy and switches the keyboard backlight
+through UPower: off when it has been brighter than OFF_LUX for DEBOUNCE seconds, back on (to the level it had before)
+when it has been darker than ON_LUX for DEBOUNCE seconds. The thresholds and debounce are the ones Samsung's sensor
+config uses on Windows (keyboard_backlight_condition: on below 50 lux, off above 100 lux, 3 s).
+
+It acts only on those transitions: a level set by hand stays until the light crosses a threshold again. Turning the
+keyboard backlight off by hand keeps it off (it is turned back on only if it was turned off here).
+"""
+import os
+import sys
+from gi.repository import Gio, GLib
+
+ON_LUX, OFF_LUX, DEBOUNCE = 50.0, 100.0, 3
+# Exists while the backlight is off because of us, so sb4edge-backlight does not remember "off" as the user's choice.
+MARK = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/run/user/%d" % os.getuid()), "sb4edge-kbd-auto-off")
+
+SP = ("net.hadess.SensorProxy", "/net/hadess/SensorProxy", "net.hadess.SensorProxy")
+KBD = ("org.freedesktop.UPower", "/org/freedesktop/UPower/KbdBacklight", "org.freedesktop.UPower.KbdBacklight")
+
+
+class Daemon:
+    def __init__(self):
+        self.bus = Gio.bus_get_sync(Gio.BusType.SYSTEM)
+        self.sensor = None
+        self.kbd = Gio.DBusProxy.new_sync(self.bus, 0, None, *KBD)
+        self.state = None        # "dark" / "bright": the last state acted on
+        self.pending = None      # state waiting for the debounce
+        self.timer = 0
+        self.saved = None        # level before we turned it off (None: we did not turn it off)
+        self.mark(False)
+        Gio.bus_watch_name_on_connection(self.bus, SP[0], 0, self.appeared, self.vanished)
+
+    def appeared(self, _conn, _name, _owner):
+        self.sensor = Gio.DBusProxy.new_sync(self.bus, 0, None, *SP)
+        if not self.sensor.get_cached_property("HasAmbientLight").unpack():
+            print("no ambient light sensor", flush=True)
+            return
+        self.sensor.connect("g-properties-changed", self.changed)
+        try:
+            self.sensor.call_sync("ClaimLight", None, 0, -1, None)
+        except GLib.Error as e:   # not the active session (yet): retried when the sensor reappears
+            print(f"ClaimLight: {e.message}", flush=True)
+            return
+        self.update()
+
+    def vanished(self, _conn, _name):
+        self.sensor = None
+        self.cancel()
+
+    def changed(self, _proxy, props, _inv):
+        if "LightLevel" in props.keys():
+            self.update()
+
+    def cancel(self):
+        if self.timer:
+            GLib.source_remove(self.timer)
+            self.timer = 0
+        self.pending = None
+
+    def update(self):
+        lux = self.sensor.get_cached_property("LightLevel").unpack()
+        want = "bright" if lux > OFF_LUX else "dark" if lux < ON_LUX else self.pending or self.state
+        if want == self.state:
+            self.cancel()
+        elif want != self.pending:
+            self.cancel()
+            self.pending = want
+            self.timer = GLib.timeout_add_seconds(DEBOUNCE, self.apply)
+
+    @staticmethod
+    def mark(on):
+        try:
+            if on:
+                open(MARK, "w").close()
+            elif os.path.exists(MARK):
+                os.unlink(MARK)
+        except OSError:
+            pass
+
+    def level(self):
+        return self.kbd.call_sync("GetBrightness", None, 0, -1, None).unpack()[0]
+
+    def set_level(self, v):
+        self.kbd.call_sync("SetBrightness", GLib.Variant("(i)", (v,)), 0, -1, None)
+
+    def apply(self):
+        self.timer = 0
+        new, self.pending = self.pending, None
+        self.state = new
+        try:
+            cur = self.level()
+            if new == "bright" and cur > 0:
+                self.saved = cur
+                self.mark(True)
+                self.set_level(0)
+            elif new == "dark" and self.saved is not None:
+                if cur == 0:   # still off as we left it
+                    self.set_level(self.saved)
+                self.saved = None
+                self.mark(False)
+            print(f"{new}: keyboard {cur} -> {self.level()}", flush=True)
+        except GLib.Error as e:
+            print(f"keyboard backlight: {e.message}", flush=True)
+        return GLib.SOURCE_REMOVE
+
+
+if __name__ == "__main__":
+    Daemon()
+    try:
+        GLib.MainLoop().run()
+    except KeyboardInterrupt:
+        sys.exit(0)

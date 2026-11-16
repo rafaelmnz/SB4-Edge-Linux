@@ -1,0 +1,13 @@
+{
+    "type": "devicetree",
+    "name": "Samsung Galaxy Book4 Edge (16 inch)",
+    "compatible": "samsung,galaxy-book4-edge-16",
+    "hwids": [
+        "adde1ac8-800d-531b-8358-335f24308e6f",
+        "f0353726-3e21-5ec9-ab33-d95d485c7109",
+        "1518cf55-bd92-5038-8add-a122b0335fe0",
+        "e45a937a-853e-5c3b-aeb7-de037d453eab",
+        "45153613-8171-51b1-930b-8aea3ab5c055",
+        "1f0d6fd9-215c-5995-ada9-8604ecc71b52"
+    ]
+}

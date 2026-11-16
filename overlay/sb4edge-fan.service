@@ -1,0 +1,12 @@
+[Unit]
+Description=Fan curve for the Samsung Galaxy Book4 Edge
+# Writes to the EC; only on this machine.
+ConditionFirmware=device-tree-compatible(samsung,galaxy-book4-edge)
+
+[Service]
+ExecStart=/usr/libexec/sb4edge-fan
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

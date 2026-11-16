@@ -1,0 +1,32 @@
+#!/bin/sh
+# Prepares what the ADSP sensors domain reads and writes through adsprpcd (sb4edge-sensors.service).
+#
+# The firmware asks for /vendor/etc/sensors/sns_reg_config (fixed path); everything else comes from that file. /vendor
+# is a symlink to /var/lib/sb4edge/vendor (tmpfiles.d). Read-only data is refreshed from /usr/share at every start;
+# the registry is writable (the firmware writes to it, it asserts and takes the ADSP down if it cannot) and seeded
+# once from the copy Windows generated, so the firmware's own updates survive reboots.
+set -eu
+SRC=/usr/share/qcom/x1e80100/Samsung/galaxy-book4-edge-16
+V=/var/lib/sb4edge/vendor
+E=$V/etc/sensors
+REG=$V/persist/sensors/registry/registry
+
+mkdir -p "$E" "$REG"
+rm -rf "$E/config.new" "$E/socinfo.new"
+cp -a "$SRC/sensors/config" "$E/config.new"
+cp -a "$SRC/socinfo" "$E/socinfo.new"
+rm -rf "$E/config" "$E/socinfo"
+mv "$E/config.new" "$E/config"
+mv "$E/socinfo.new" "$E/socinfo"
+# The registry records each config file's mtime (as Windows generated it: 1719256666 for all of them); a mismatch makes
+# the firmware rebuild the whole registry on every start. Keep them equal.
+find "$E/config" -type f -exec touch -d @1719256666 {} +
+# The firmware keeps a trailing CR (Windows line endings) as part of a path: always write Unix line endings.
+sed -e 's/\r$//' \
+    -e "s|=/sys/devices/soc0/|=/vendor/etc/sensors/socinfo/|" \
+    -e "s|^file=output=.*|file=output=/vendor/persist/sensors/registry/registry|" \
+    -e "s|^file=config=.*|file=config=/vendor/etc/sensors/config|" \
+    "$SRC/sensors/sns_reg.conf" >"$E/sns_reg_config"
+if [ -z "$(ls -A "$REG")" ]; then
+	cp -a "$SRC/sensors/registry/." "$REG/"
+fi

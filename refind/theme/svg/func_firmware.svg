@@ -1,0 +1,3 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
+ <g transform="translate(60.0,60.0)" fill="none" stroke="#ffffff" stroke-opacity="0.55" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><rect x="-19" y="-19" width="38" height="38" rx="7"/><rect x="-7" y="-7" width="14" height="14" rx="2"/><path d="M-9,-24 V-31 M-9,24 V31 M-24,-9 H-31 M24,-9 H31 M0,-24 V-31 M0,24 V31 M-24,0 H-31 M24,0 H31 M9,-24 V-31 M9,24 V31 M-24,9 H-31 M24,9 H31" stroke-width="4"/></g>
+</svg>

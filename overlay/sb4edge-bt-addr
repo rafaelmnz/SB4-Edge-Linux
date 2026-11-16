@@ -1,0 +1,80 @@
+#!/usr/bin/python3
+# The WCN7850 Bluetooth controller has no address in its NVM (on Windows the firmware supplies it),
+# so hci0 comes up "unconfigured" and BlueZ ignores it. Give it a stable, locally administered
+# address derived from the machine's serial numbers via the kernel mgmt API (MGMT_OP_SET_PUBLIC_ADDRESS).
+# btmgmt is not used: it hangs or exits early without a usable stdin, which is what a service gets.
+import ctypes
+import hashlib
+import os
+import socket
+import struct
+import sys
+import time
+
+AF_BLUETOOTH, BTPROTO_HCI, HCI_DEV_NONE, HCI_CHANNEL_CONTROL = 31, 1, 0xFFFF, 3
+MGMT_OP_READ_CONFIG_INFO, MGMT_OP_SET_PUBLIC_ADDRESS = 0x0037, 0x0039
+MGMT_EV_CMD_COMPLETE, MGMT_EV_CMD_STATUS = 0x0001, 0x0002
+MGMT_OPTION_PUBLIC_ADDRESS = 1 << 1
+
+
+class SockaddrHci(ctypes.Structure):
+    _fields_ = [("family", ctypes.c_ushort), ("dev", ctypes.c_ushort), ("channel", ctypes.c_ushort)]
+
+
+def mgmt_socket():
+    s = socket.socket(AF_BLUETOOTH, socket.SOCK_RAW | socket.SOCK_CLOEXEC, BTPROTO_HCI)
+    addr = SockaddrHci(AF_BLUETOOTH, HCI_DEV_NONE, HCI_CHANNEL_CONTROL)
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.bind(s.fileno(), ctypes.byref(addr), ctypes.sizeof(addr)) < 0:
+        raise OSError(ctypes.get_errno(), "bind mgmt socket")
+    s.settimeout(5)
+    return s
+
+
+def command(s, opcode, index, params=b""):
+    s.send(struct.pack("<HHH", opcode, index, len(params)) + params)
+    while True:
+        data = s.recv(65535)
+        ev, idx, plen = struct.unpack("<HHH", data[:6])
+        body = data[6:6 + plen]
+        if ev in (MGMT_EV_CMD_COMPLETE, MGMT_EV_CMD_STATUS) and idx == index:
+            op, status = struct.unpack("<HB", body[:3])
+            if op == opcode:
+                return status, body[3:]
+
+
+def main():
+    index = 0
+    for _ in range(60):  # hci0 shows up once hci_uart has loaded the firmware
+        if os.path.exists(f"/sys/class/bluetooth/hci{index}"):
+            break
+        time.sleep(1)
+    else:
+        sys.exit("hci0 not found")
+    s = mgmt_socket()
+    for _ in range(30):
+        status, info = command(s, MGMT_OP_READ_CONFIG_INFO, index)
+        if status == 0:
+            break
+        time.sleep(1)
+    else:
+        sys.exit(f"read config info failed: status {status}")
+    _manufacturer, _supported, missing = struct.unpack("<HII", info[:10])
+    if not missing & MGMT_OPTION_PUBLIC_ADDRESS:
+        print("hci0 already has a public address")
+        return
+    serials = b""
+    for f in ("product_serial", "board_serial"):
+        try:
+            serials += open(f"/sys/class/dmi/id/{f}", "rb").read()
+        except OSError:
+            pass
+    h = hashlib.sha256(serials).digest()
+    addr = bytes([0x02]) + h[:5]  # locally administered, unicast
+    status, _ = command(s, MGMT_OP_SET_PUBLIC_ADDRESS, index, addr[::-1])  # bdaddr is little-endian
+    if status:
+        sys.exit(f"set public address failed: status {status}")
+    print("hci0 address", ":".join(f"{b:02X}" for b in addr))
+
+
+main()

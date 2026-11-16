@@ -1,0 +1,30 @@
+/dts-v1/;
+/plugin/;
+/*
+ * SD card reader (16" only), assumed wired as on every X1 board with a slot in the kernel tree (CRD/devkit,
+ * Dell, Lenovo): SDC2 controller, card detect on TLMM 71 (active low), vmmc L9B 2.9 V, vqmmc L6B 1.8 V.
+ * Unverified on the Book4 Edge: test with sb4_dtbo, then insert a card (dmesg: mmc0: new ... card).
+ */
+#include <dt-bindings/gpio/gpio.h>
+
+&tlmm {
+	sdc2_card_det_n: sdc2-card-det-state {
+		pins = "gpio71";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-pull-up;
+	};
+};
+
+&sdhc_2 {
+	cd-gpios = <&tlmm 71 GPIO_ACTIVE_LOW>;
+	pinctrl-0 = <&sdc2_default &sdc2_card_det_n>;
+	pinctrl-1 = <&sdc2_sleep &sdc2_card_det_n>;
+	pinctrl-names = "default", "sleep";
+	vmmc-supply = <&vreg_l9b_2p9>;
+	vqmmc-supply = <&vreg_l6b_1p8>;
+	bus-width = <4>;
+	no-sdio;
+	no-mmc;
+	status = "okay";
+};

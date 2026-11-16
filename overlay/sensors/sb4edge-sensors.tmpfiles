@@ -1,0 +1,3 @@
+# The ADSP sensors firmware reads /vendor/etc/sensors/sns_reg_config (a fixed path). See sb4edge-sensors-setup.
+d /var/lib/sb4edge/vendor 0755 root root -
+L /vendor - - - - /var/lib/sb4edge/vendor

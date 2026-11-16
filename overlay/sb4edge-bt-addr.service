@@ -1,0 +1,11 @@
+[Unit]
+Description=Set Galaxy Book4 Edge Bluetooth address
+After=bluetooth.service
+Wants=bluetooth.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/sb4edge-bt-addr
+
+[Install]
+WantedBy=bluetooth.target

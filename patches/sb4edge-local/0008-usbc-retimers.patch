@@ -1,0 +1,8 @@
+--- a/arch/arm64/boot/dts/qcom/x1e84100-samsung-galaxy-book4-edge-16.dts
++++ b/arch/arm64/boot/dts/qcom/x1e84100-samsung-galaxy-book4-edge-16.dts
+@@ -29,3 +29,5 @@
+ &panel {
+ 	compatible = "samsung,atna60cl07", "samsung,atna33xc20";
+ };
++
++#include "x1-samsung-galaxy-book4-edge-retimers.dtsi"

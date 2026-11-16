@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2880" height="1800" viewBox="0 0 2880 1800">
+ <defs>
+  <linearGradient id="base" x1="0" y1="0" x2="0.35" y2="1">
+   <stop offset="0" stop-color="#0d1020"/><stop offset="1" stop-color="#05060c"/></linearGradient>
+  <radialGradient id="warm" cx="0.5" cy="0.5" r="0.5">
+   <stop offset="0" stop-color="#e95420" stop-opacity="0.34"/><stop offset="1" stop-color="#e95420" stop-opacity="0"/></radialGradient>
+  <radialGradient id="cool" cx="0.5" cy="0.5" r="0.5">
+   <stop offset="0" stop-color="#1e78ff" stop-opacity="0.30"/><stop offset="1" stop-color="#1e78ff" stop-opacity="0"/></radialGradient>
+  <radialGradient id="violet" cx="0.5" cy="0.5" r="0.5">
+   <stop offset="0" stop-color="#7a3cff" stop-opacity="0.16"/><stop offset="1" stop-color="#7a3cff" stop-opacity="0"/></radialGradient>
+  <radialGradient id="vig" cx="0.5" cy="0.45" r="0.75">
+   <stop offset="0.55" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.55"/></radialGradient>
+ </defs>
+ <rect width="2880" height="1800" fill="url(#base)"/>
+ <ellipse cx="633.6" cy="1548.0" rx="1209.6" ry="990.0000000000001" fill="url(#warm)"/>
+ <ellipse cx="2304.0" cy="216.0" rx="1267.2" ry="1044.0" fill="url(#cool)"/>
+ <ellipse cx="1584.0000000000002" cy="990.0000000000001" rx="1007.9999999999999" ry="720.0" fill="url(#violet)"/>
+ <rect width="2880" height="1800" fill="url(#vig)"/>
+</svg>

@@ -1,0 +1,34 @@
+#!/bin/sh
+# HDMI hotplug (udev): adds modes that fit the HDMI converter's link to monitors that don't advertise them.
+# The HDMI port is a Realtek RTD2171 whose DP input only does HBR2 x4 (17.28 Gbit/s). For the Samsung Odyssey
+# G95NC (57") an EDID with 5120x1440 @ 75 Hz is loaded through the connector's edid_override (debugfs) while it
+# is connected, and cleared when it is unplugged, so other monitors always get their own EDID.
+C=/sys/class/drm/card1-HDMI-A-1
+D=/sys/kernel/debug/dri/ae01000.display-controller/HDMI-A-1
+S=/run/sb4edge-hdmi-edid
+MAKE=/usr/lib/sb4edge/make-g9-edid.py
+[ -e "$C" ] && [ -e "$D/edid_override" ] || exit 0
+
+hotplug() { echo "change $(cat /proc/sys/kernel/random/uuid) HOTPLUG=1" > /sys/class/drm/card1/uevent; }
+
+if [ "$(cat $C/status)" != connected ]; then
+    if [ -e "$S" ]; then
+        printf reset > "$D/edid_override"   # exactly "reset": a trailing newline makes it EDID data
+        rm -f "$S"
+        logger -t sb4edge-hdmi-edid "HDMI unplugged, EDID override cleared"
+    fi
+    exit 0
+fi
+[ -e "$S" ] && exit 0                    # override already in place for the connected monitor
+T=$(mktemp -d)
+cat "$C/edid" > "$T/real.edid"
+if [ -s "$T/real.edid" ] && grep -aq "Odyssey G95NC" "$T/real.edid" &&
+   python3 "$MAKE" "$T/real.edid" "$T/new.edid" >/dev/null 2>&1; then
+    cat "$T/new.edid" > "$D/edid_override"
+    touch "$S"
+    echo detect > "$C/status"
+    hotplug
+    logger -t sb4edge-hdmi-edid "Odyssey G95NC on HDMI: 5120x1440 @ 75 Hz added"
+fi
+rm -rf "$T"
+exit 0

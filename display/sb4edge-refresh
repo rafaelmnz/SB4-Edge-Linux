@@ -1,0 +1,94 @@
+#!/usr/bin/python3
+"""sb4edge: built-in display at 60 Hz on battery, 120 Hz on AC (GNOME/Mutter, per user session).
+
+Watches UPower's OnBattery and Mutter's MonitorsChanged, and re-applies the current monitor layout with only the
+eDP-1 refresh changed (external monitors, scale, position untouched). Needs the 60 Hz mode from the sb4edge EDID.
+SB4EDGE_REFRESH_AC / SB4EDGE_REFRESH_BAT override the targets (Hz).
+"""
+import os
+import sys
+from gi.repository import Gio, GLib
+
+AC_HZ = float(os.environ.get("SB4EDGE_REFRESH_AC", 120))
+BAT_HZ = float(os.environ.get("SB4EDGE_REFRESH_BAT", 60))
+CONNECTOR = "eDP-1"
+
+bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+sysbus = Gio.bus_get_sync(Gio.BusType.SYSTEM)
+mutter = Gio.DBusProxy.new_sync(bus, 0, None, "org.gnome.Mutter.DisplayConfig",
+                                "/org/gnome/Mutter/DisplayConfig", "org.gnome.Mutter.DisplayConfig")
+upower = Gio.DBusProxy.new_sync(sysbus, 0, None, "org.freedesktop.UPower",
+                                "/org/freedesktop/UPower", "org.freedesktop.UPower")
+
+
+def log(*a):
+    print(*a, flush=True)
+
+
+def on_battery():
+    v = upower.get_cached_property("OnBattery")
+    return bool(v.unpack()) if v is not None else False
+
+
+def apply(*_):
+    target = BAT_HZ if on_battery() else AC_HZ
+    try:
+        serial, monitors, logical, props = mutter.call_sync("GetCurrentState", None, 0, -1, None).unpack()
+    except GLib.Error as e:
+        log("GetCurrentState:", e.message)
+        return False
+    cur = {}
+    want = None
+    for (conn, *_), modes, _p in monitors:
+        current = next((m for m in modes if m[6].get("is-current")), None)
+        if current is None:
+            continue
+        cur[conn] = current[0]
+        if conn == CONNECTOR:
+            same = [m for m in modes if m[1] == current[1] and m[2] == current[2]]
+            best = min(same, key=lambda m: abs(m[3] - target))
+            if abs(best[3] - current[3]) < 0.5:
+                return False
+            want = best
+    if want is None:
+        return False
+    cur[CONNECTOR] = want[0]
+    lms = []
+    for x, y, scale, transform, primary, mons, _p in logical:
+        lms.append((x, y, scale, transform, primary,
+                    [(m[0], cur[m[0]], {}) for m in mons if m[0] in cur]))
+    args = GLib.Variant("(uua(iiduba(ssa{sv}))a{sv})", (serial, 1, lms, {}))
+    try:
+        mutter.call_sync("ApplyMonitorsConfig", args, 0, -1, None)
+        log(f"{CONNECTOR}: {want[3]:.0f} Hz ({'battery' if target == BAT_HZ else 'AC'})")
+    except GLib.Error as e:
+        log("ApplyMonitorsConfig:", e.message)
+    return False
+
+
+# A mode change blanks the panel for a moment, and the AC state blips while the USB-C helper renegotiates
+# 20 V (a second or two on battery), so only act once the state has held for SETTLE_S.
+SETTLE_S = 10
+_timer = 0
+
+
+def debounce(*_):
+    global _timer
+    if _timer:
+        GLib.source_remove(_timer)
+    _timer = GLib.timeout_add_seconds(SETTLE_S, _fire)
+
+
+def _fire():
+    global _timer
+    _timer = 0
+    return apply()
+
+
+upower.connect("g-properties-changed", debounce)
+bus.signal_subscribe("org.gnome.Mutter.DisplayConfig", "org.gnome.Mutter.DisplayConfig", "MonitorsChanged",
+                     "/org/gnome/Mutter/DisplayConfig", None, 0, debounce)
+apply()
+if "--once" in sys.argv:
+    sys.exit(0)
+GLib.MainLoop().run()

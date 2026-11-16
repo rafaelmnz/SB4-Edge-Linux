@@ -1,0 +1,40 @@
+--- a/sound/soc/qcom/x1e80100.c
++++ b/sound/soc/qcom/x1e80100.c
+@@ -97,6 +97,13 @@
+ 	case TX_CODEC_DMA_TX_3:
+ 		channels->min = 1;
+ 		break;
++	case VA_CODEC_DMA_TX_0:
++		/*
++		 * The VA DMIC graph only starts with all four slots; the DSP stream MFC converts to what the
++		 * front end asked for (e.g. two channels for a dual-mic noise suppressor).
++		 */
++		channels->min = channels->max = 4;
++		break;
+ 	default:
+ 		break;
+ 	}
+--- a/sound/soc/qcom/qdsp6/audioreach.c
++++ b/sound/soc/qcom/qdsp6/audioreach.c
+@@ -1491,7 +1491,7 @@
+ 		rc = audioreach_display_port_set_media_format(graph, module, cfg);
+ 		break;
+ 	case  MODULE_ID_SMECNS_V2:
+-		rc = audioreach_set_module_config(graph, module, cfg);
++		rc = module->data ? audioreach_set_module_config(graph, module, cfg) : 0;
+ 		break;
+ 	case MODULE_ID_I2S_SOURCE:
+ 	case MODULE_ID_I2S_SINK:
+@@ -1537,7 +1537,11 @@
+ 		break;
+ 
+ 	default:
+-		rc = 0;
++		/*
++		 * Any other module (e.g. a voice-processing module) gets the raw APM parameter blob the
++		 * topology carries for it (SND_SOC_AR_TPLG_MODULE_CFG_TYPE), if any.
++		 */
++		rc = module->data ? audioreach_set_module_config(graph, module, cfg) : 0;
+ 	}
+ 
+ 	return rc;

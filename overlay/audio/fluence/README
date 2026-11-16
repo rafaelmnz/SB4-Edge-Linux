@@ -1,0 +1,7 @@
+Microphone (Fluence): the internal mics through Samsung's Windows voice chain on the audio DSP.
+  topology  MultiMedia8 (hw:0,7, 16 kHz stereo): VA DMIC -> MFC -> IIR EQ 0x07001014 -> Fluence NN NS 0x070010d9,
+            calibration from Samsung's acdb_cal.acdb (kernel patch 0013 sends it with APM SET_CFG)
+  adsprpcd  quic/fastrpc, serves the DSP the Fluence .so files in adsp/ (Windows qcsubsys_ext_adsp8380 package)
+  service   sb4edge-fluence.service (DSP helper), sb4edge-fluence-source.service (user: adds the PipeWire source)
+Fluence NN is a 16 kHz algorithm (call quality, up to 8 kHz). "Microphone (noise suppression)" (WebRTC, 48 kHz)
+and "Internal microphones" (raw) stay selectable in Settings > Sound.

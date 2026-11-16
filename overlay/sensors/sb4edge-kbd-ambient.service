@@ -1,0 +1,13 @@
+[Unit]
+Description=Keyboard backlight follows the ambient light sensor (Samsung Galaxy Book4 Edge)
+PartOf=graphical-session.target
+After=graphical-session.target
+ConditionPathExists=/usr/lib/sb4edge/ssc/iio-sensor-proxy
+
+[Service]
+ExecStart=/usr/libexec/sb4edge-kbd-ambient
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target
