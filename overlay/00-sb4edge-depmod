@@ -1,0 +1,9 @@
+#!/bin/sh
+# Kernel packages built with bindeb-pkg ship their own modules.dep, which leaves out the sb4edge drivers in
+# /lib/modules/<version>/updates (EC battery and keyboard, USB-C retimers): battery, keyboard backlight and
+# charge limit then disappear after a kernel install. Rebuild the index before the initramfs is generated.
+set -e
+version="$1"
+case "$version" in *-sb4edge) ;; *) exit 0 ;; esac
+[ -d "/lib/modules/$version" ] || exit 0
+depmod -a "$version"

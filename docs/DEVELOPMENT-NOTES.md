@@ -591,3 +591,15 @@ Windows qcdxkm8380.sys: logging stripped; AUX diag escape at sub_140115C40 calls
   input (I420 from rawvideoparse fails to negotiate). GPU: OpenGL 4.6 / ES 3.2 / Vulkan 1.4 (Mesa 26.2.6 turnip).
 - Touchscreen (Goodix 27C6:0123, i2c8 0x5d, hid-multitouch): 10 slots; live test registered 10 fingers at once.
   Touchpad 4D49:4150: 5 slots.
+- After installing kernel 7.4rc3-2: battery, keyboard backlight (Fn+F9), performance modes gone. bindeb-pkg ships its
+  own modules.dep, which overwrote the system's and left out updates/ (EC battery/kbd, gb4e_typec). Fixed with
+  /etc/kernel/postinst.d/00-sb4edge-depmod (overlay/00-sb4edge-depmod); power-profiles-daemon and gsd-power must be
+  restarted (or reboot) when platform_profile / the kbd LED appear late (ppd falls back to "placeholder", gsd-power
+  logs "max > min" on every Fn+F9).
+- Fingerprint: once (14:15, fprintd start) "fpi_sdcp_device_connect_complete: assertion 'priv->host_private_key'
+  failed"; fprintd then held the claim and ignored SIGTERM (killed after 90 s); every later Claim was refused
+  ("Device was already claimed"). Restarting fprintd fixed it. Not seen on earlier boots; cause unknown.
+- Mesa 26.3.0 (built side by side in /opt, buildtype plain -O2, no LTO) vs Ubuntu's 26.2.6, glmark2/vkmark, two
+  alternating rounds on AC: native 2880x1800 equal within noise (GL 974/961 vs 1037/835, Vulkan 4401/4271 vs
+  4475/4313); 800x600 lower on 26.3 (GL 2227/1788 vs 1343/1406, Vulkan 22057/22859 vs 19275/22105). Same API
+  versions (GL 4.6, ES 3.2, Vulkan 1.4; no Vulkan 1.5 yet). Kept Ubuntu's 26.2.6.

@@ -39,6 +39,8 @@ mkdir -p "$FW" "$B/usr/share/sb4edge/hwids"
 cp /work/fw/*.mbn /work/fw/*.elf /work/fw/*.jsn "$FW/"
 cp /work/overlay/hwids/*.json "$B/usr/share/sb4edge/hwids/"
 install -m755 /work/overlay/50-sb4edge-stubble "$B/etc/kernel/postinst.d/50-sb4edge-stubble"
+# bindeb-pkg kernels ship a modules.dep without updates/ (our EC/USB-C drivers): rebuild it before the initramfs
+install -m755 /work/overlay/00-sb4edge-depmod "$B/etc/kernel/postinst.d/00-sb4edge-depmod"
 # The hook needs systemd-ukify, stubble and python3-pefile on the installed system (installed with the network
 # packages below): without them a kernel deb installed later boots without a devicetree and the laptop resets.
 

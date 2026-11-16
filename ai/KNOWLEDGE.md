@@ -145,6 +145,8 @@ implemented but not tested on hardware; **[open]** not solved.
   AV1 1080p 429 fps (libaom 185); transcode 4K HEVC -> 4K H.264 hw->hw 98 fps / 27 % (sw 53 fps / 624 %). On easy
   synthetic content the 12-core CPU decodes faster but uses 10-20x the CPU time.
 - GPU: Adreno X1-85 with Mesa 26.2.6: OpenGL 4.6, OpenGL ES 3.2, Vulkan 1.4 (turnip, conformant) [verified].
+  Mesa 26.3.0 benchmarked against it (glmark2/vkmark): not faster (equal at native resolution, lower at 800x600),
+  same API versions; the ISO keeps Ubuntu's 26.2.6.
 - Browsers: Firefox can use V4L2-M2M through the system libavcodec (Mozilla bug 1833354) - untested here; the
   Nightly build tested lacks its v4l2test probe helper.
 
