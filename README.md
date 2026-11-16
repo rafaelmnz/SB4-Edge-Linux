@@ -4,7 +4,18 @@
 ISO for the Samsung Galaxy Book4 Edge 16" (Snapdragon X Elite X1E-84-100), with the kernel, firmware and
 userspace pieces this laptop needs.
 
-The ISO itself is not published here (it is 4.8 GB): `build.sh` builds it.
+## Download
+
+Ready-made ISOs are on the [Releases](https://github.com/rafaelmnz/SB4-Edge-Linux/releases) page, split in parts
+because GitHub limits each file to 2 GB. Download every `.part*` file plus `SHA256SUMS`, then join and check:
+
+```sh
+cat ubuntu-26.04.1-sb4edge-desktop-arm64.iso.part* > ubuntu-26.04.1-sb4edge-desktop-arm64.iso
+shasum -a 256 -c SHA256SUMS      # Linux: sha256sum -c SHA256SUMS
+```
+
+(Windows: `copy /b ubuntu-26.04.1-sb4edge-desktop-arm64.iso.part1 + ...part2 + ...part3 ubuntu-26.04.1-sb4edge-desktop-arm64.iso`.)
+Or build it yourself with `build.sh` (below).
 
 ## Hardware status
 
@@ -23,7 +34,7 @@ The ISO itself is not published here (it is 4.8 GB): `build.sh` builds it.
 | SD card reader | works | |
 | Battery, charging, fan profiles | works | |
 | Windows (BitLocker) partitions | works | opened in Files with the BitLocker password or recovery key |
-| Fingerprint reader | detected | not tested |
+| Fingerprint reader | works | EgisTec 1c7a:05a1 in the power button: GNOME login and lock screen, sudo; prints stay on the sensor (SDCP) |
 
 Known issues: switching a USB-C port from DisplayPort back to USB 3 can fail until reboot; Secure Boot must be off
 (the kernel is not signed). The 14" model shares most of the devicetree but is untested.
@@ -41,7 +52,11 @@ Known issues: switching a USB-C port from DisplayPort back to USB 3 can fail unt
   `sb4edge-kbd-ambient` switches the keyboard backlight.
 - **Boot**: rEFInd on the installed system (Linux and Windows), GRUB on the USB stick.
 - Rebuilt Ubuntu packages: cryptsetup (BitLocker volumes from recent Windows 11), libcamera (OV02C10), Resources
-  (Adreno GPU page).
+  (Adreno GPU page), libfprint with SDCP (`extra/libfprint`, fingerprint reader).
+- **Fingerprint** (`extra/libfprint`): the EgisTec sensor only keeps enrolled prints over SDCP. libfprint MR !547
+  adds SDCP to its egismoc driver; this sensor's model certificate arrives with one byte zeroed ("Microsoft
+  Cor\\x00oration"), so the patch here finds its CA by key identifier and accepts it only when Microsoft's signature
+  verifies on the restored bytes. Fingerprint is enabled for sudo and login (password still works).
 
 ## Building
 
@@ -52,7 +67,7 @@ Needs an arm64 host with Docker (an Apple Silicon Mac works) and about 60 GB of 
 ./build.sh iso        # only the ISO step (after the others have run once)
 ```
 
-Steps: `image kernel modules usbc ssc fastrpc cryptsetup resources libcamera iso`. The Ubuntu 26.04.1 desktop arm64
+Steps: `image kernel modules usbc ssc fastrpc cryptsetup resources libcamera libfprint iso`. The Ubuntu 26.04.1 desktop arm64
 ISO is downloaded to `iso/` on the first ISO build. The result is `out/ubuntu-26.04.1-sb4edge-desktop-arm64.iso`.
 
 Write it to a USB drive (e.g. `dd if=out/ubuntu-26.04.1-sb4edge-desktop-arm64.iso of=/dev/rdiskN bs=4m` on macOS),
@@ -62,7 +77,7 @@ turn Secure Boot off in the BIOS and boot from it.
 
 `fw/`, `windows-files/` and `sensors/qcom-root` come from Samsung's and Qualcomm's Windows drivers for this laptop.
 They are included so the image can be built, and remain the property of their owners. Upstream sources used:
-Linux, quic/fastrpc, libssc, iio-sensor-proxy, rEFInd, Ubuntu.
+Linux, quic/fastrpc, libssc, iio-sensor-proxy, libfprint, rEFInd, Ubuntu.
 
 ## Credits and references
 
@@ -77,7 +92,10 @@ This project builds on other people's work on this laptop and on the Snapdragon 
   driver (`extra/samsung-galaxybook-battery`), modified here.
 - **ciscobugger – [book4-edge-linux](https://github.com/ciscobugger/book4-edge-linux)** (15.6"): OV02C10 libcamera
   sensor helper and tuning (`extra/libcamera`), EC command notes, DMIC clock reference.
-- **Nicola Nicodemo ([n1c0la84](https://github.com/n1c0la84))** – fingerprint reader enablement on the 14" (EgisTec on usb_2).
+- **Nicola Nicodemo ([n1c0la84](https://github.com/n1c0la84))** – fingerprint reader enablement on the 14" (EgisTec on usb_2)
+  and the finding that it needs SDCP ([book4-edge-linux](https://github.com/n1c0la84/book4-edge-linux)).
+- **libfprint – [MR !547](https://gitlab.freedesktop.org/libfprint/libfprint/-/merge_requests/547)** "Implement SDCP v2
+  (including egismoc implementation)": the base of `extra/libfprint`.
 - **jglathe – [linux_ms_dev_kit](https://github.com/jglathe/linux_ms_dev_kit)** and **[zensanp](https://github.com/zensanp)**'s 6.19 tree – X1E
   devkit Ubuntu images and kernel, idle-state notes
   ([Launchpad bug 2084591](https://bugs.launchpad.net/bugs/2084591)).

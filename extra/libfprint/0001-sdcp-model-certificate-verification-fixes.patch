@@ -1,0 +1,153 @@
+From: sb4edge-linux
+Subject: sdcp: model certificate verification fixes
+
+1. fpi_sdcp_verify_certificate() freed param after X509_STORE_set1_param() but
+   kept the pointer, and its error paths freed it again: a failed check
+   aborted the process (double free) instead of returning the error.
+2. The EgisTec 1c7a:05a1 (firmware 9050.1.2.32) model certificate names its
+   issuer "O=Microsoft Cor\x00oration", so OpenSSL finds no issuer by name
+   ("unable to get local issuer certificate"). Fall back to the authority key
+   identifier: the CA with the matching subject key identifier must verify the
+   certificate's signature, and that CA must verify against the truststore.
+---
+--- a/libfprint/fpi-sdcp.c	2026-11-15 22:33:30
++++ b/libfprint/fpi-sdcp.c	2026-11-15 22:43:48
+@@ -24,6 +24,7 @@
+ #include "sdcp/fpi-sdcp-truststore-resource.h"
+ 
+ #include <openssl/core_names.h>
++#include <openssl/x509v3.h>
+ #include <openssl/ecdh.h>
+ #include <openssl/evp.h>
+ #include <openssl/err.h>
+@@ -221,7 +222,105 @@
+   return NULL;
+ }
+ 
++/*
++ * Some model certificates carry an issuer name that does not match their CA's
++ * subject byte for byte (the EgisTec 1c7a:05a1, firmware 9050.1.2.32, reports
++ * "O=Microsoft Cor\x00oration"), so OpenSSL cannot build the chain by name.
++ * Fall back to the authority key identifier: find the CA whose subject key
++ * identifier matches, check the model certificate's signature with that CA's
++ * key, and verify the CA itself up to a root in the truststore.
++ */
+ static gboolean
++fpi_sdcp_verify_certificate_by_key_id (X509_STORE *store,
++                                       X509       *certificate)
++{
++  const ASN1_OCTET_STRING *akid = X509_get0_authority_key_id (certificate);
++  STACK_OF(X509) *certs = NULL;
++  X509 *issuer = NULL;
++  X509_STORE_CTX *ctx = NULL;
++  gboolean ok = FALSE;
++
++  if (!akid)
++    return FALSE;
++
++  certs = X509_STORE_get1_all_certs (store);
++  for (int i = 0; certs && i < sk_X509_num (certs); i++)
++    {
++      X509 *ca = sk_X509_value (certs, i);
++      const ASN1_OCTET_STRING *skid = X509_get0_subject_key_id (ca);
++
++      if (skid && ASN1_OCTET_STRING_cmp (skid, akid) == 0)
++        {
++          issuer = ca;
++          break;
++        }
++    }
++
++  if (!issuer)
++    {
++      fp_dbg ("SDCP: no CA in the truststore matches the model certificate's key identifier");
++      goto out;
++    }
++
++  if (X509_verify (certificate, X509_get0_pubkey (issuer)) != 1)
++    {
++      /*
++       * The 1c7a:05a1 sends its certificate with one byte zeroed: the 'p' of
++       * "Microsoft Corporation" in the issuer. Put it back and check the CA's
++       * signature again; only a byte-exact match of what the CA signed passes.
++       */
++      static const guchar damaged[] = "Microsoft Cor\0oration";
++      unsigned char *der = NULL;
++      int der_len = i2d_X509 (certificate, &der);
++      gboolean repaired = FALSE;
++
++      ERR_clear_error ();
++      for (int i = 0; der && i + (int) sizeof (damaged) - 1 <= der_len; i++)
++        {
++          if (memcmp (der + i, damaged, sizeof (damaged) - 1) == 0)
++            {
++              const unsigned char *p = der;
++              X509 *fixed;
++
++              der[i + 13] = 'p';
++              fixed = d2i_X509 (NULL, &p, der_len);
++              if (fixed && X509_verify (fixed, X509_get0_pubkey (issuer)) == 1)
++                repaired = TRUE;
++              g_clear_pointer (&fixed, X509_free);
++              break;
++            }
++        }
++      OPENSSL_free (der);
++
++      if (!repaired)
++        {
++          fp_warn ("SDCP: model certificate signature does not verify with its CA's key");
++          goto out;
++        }
++      fp_info ("SDCP: model certificate verifies with its CA's key once the zeroed issuer byte is restored");
++    }
++
++  ctx = X509_STORE_CTX_new ();
++  if (!ctx || !X509_STORE_CTX_init (ctx, store, issuer, NULL) || X509_verify_cert (ctx) != 1)
++    {
++      fp_warn ("SDCP: the model certificate's CA does not verify against the truststore");
++      goto out;
++    }
++
++  fp_info ("SDCP: model certificate verified by key identifier (its issuer name does not match its CA)");
++  ok = TRUE;
++
++out:
++  if (ctx)
++    X509_STORE_CTX_free (ctx);
++  if (certs)
++    OSSL_STACK_OF_X509_free (certs);
++  if (!ok)
++    print_openssl_errors ();
++  return ok;
++}
++
++static gboolean
+ fpi_sdcp_verify_certificate (X509    *certificate,
+                              GError **error)
+ {
+@@ -257,14 +356,22 @@
+   if (!X509_STORE_set1_param (sdcp_truststore, param))
+     goto out_error;
+ 
+-  X509_VERIFY_PARAM_free (param);
++  g_clear_pointer (&param, X509_VERIFY_PARAM_free);
+   ctx = X509_STORE_CTX_new ();
+ 
+   if(!X509_STORE_CTX_init (ctx, sdcp_truststore, certificate, NULL))
+     goto out_verify_error;
+ 
+   if (!X509_verify_cert (ctx))
+-    goto out_verify_error;
++    {
++      if (X509_STORE_CTX_get_error (ctx) == X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY &&
++          fpi_sdcp_verify_certificate_by_key_id (sdcp_truststore, certificate))
++        {
++          X509_STORE_CTX_free (ctx);
++          return TRUE;
++        }
++      goto out_verify_error;
++    }
+ 
+   X509_STORE_CTX_free (ctx);
+ 

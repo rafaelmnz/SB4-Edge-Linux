@@ -5,10 +5,14 @@ D=$1
 export DEBIAN_FRONTEND=noninteractive
 exec >>/run/sb4dev.log 2>&1
 set -x
-install -d -m700 /var/lib/tailscale && cp -a "$D/tailscale/." /var/lib/tailscale/
 dpkg -i "$D"/debs/*.deb
 install -d -m700 -o ubuntu -g ubuntu /home/ubuntu/.ssh
 install -m600 -o ubuntu -g ubuntu "$D/authorized_keys" /home/ubuntu/.ssh/authorized_keys
-systemctl enable --now ssh tailscaled
+systemctl enable --now ssh
+# Tailscale is not in the ISO: only if a dev deb in debs/ installed it.
+if command -v tailscaled >/dev/null && [ -d "$D/tailscale" ]; then
+    install -d -m700 /var/lib/tailscale && cp -a "$D/tailscale/." /var/lib/tailscale/
+    systemctl enable --now tailscaled
+fi
 [ -x "$D/local.sh" ] && "$D/local.sh" "$D"
 exit 0

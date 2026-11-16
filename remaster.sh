@@ -89,22 +89,19 @@ cp -a "$B/var/lib/apt/lists" /iso/apt-lists.orig
 chroot_net_upgrade "$B"
 rm -rf "$B/var/lib/apt/lists"; mv /iso/apt-lists.orig "$B/var/lib/apt/lists"
 
-log "remote access tools in the base layer: curl, openssh-server, tailscale"
+log "remote access tools in the base layer: curl, openssh-server"
 # Live session and installed system both get them. sshd is enabled but the live "ubuntu" user has no
 # password (sshd refuses empty passwords), so nothing is reachable until a password or key is set.
-# Tailscale comes from its own apt repository (left configured, so it keeps updating); not logged in.
 cp -a "$B/var/lib/apt/lists" /iso/apt-lists.orig
-curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/resolute.noarmor.gpg -o "$B/usr/share/keyrings/tailscale-archive-keyring.gpg"
-curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/resolute.tailscale-keyring.list -o "$B/etc/apt/sources.list.d/tailscale.list"
 mount -t tmpfs tmpfs "$B/run"
 mkdir -p "$B/run/systemd/resolve"; cp /etc/resolv.conf "$B/run/systemd/resolve/stub-resolv.conf"
 chroot "$B" /bin/bash -euxc "
 export DEBIAN_FRONTEND=noninteractive FK_MACHINE=none
-mkdir -p /tmp/net-sources; cp /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list.d/tailscale.list /tmp/net-sources/
+mkdir -p /tmp/net-sources; cp /etc/apt/sources.list.d/ubuntu.sources /tmp/net-sources/
 APT='-o Dir::Etc::sourcelist=/dev/null -o Dir::Etc::sourceparts=/tmp/net-sources'
 apt-get \$APT update
-apt-get \$APT install -y --no-install-recommends curl openssh-server tailscale nvtop gstreamer1.0-plugins-bad libopenh264-8 systemd-ukify stubble python3-pefile ddcutil libprotobuf-c1
-systemctl enable ssh.service tailscaled.service
+apt-get \$APT install -y --no-install-recommends curl openssh-server nvtop gstreamer1.0-plugins-bad libopenh264-8 systemd-ukify stubble python3-pefile ddcutil libprotobuf-c1
+systemctl enable ssh.service
 apt-get clean; rm -rf /tmp/net-sources
 "
 umount "$B/run"
@@ -361,7 +358,9 @@ chroot_net_upgrade $M
 # BitLocker: cryptsetup rebuilt to skip unknown VMK entries (build-cryptsetup.sh, patches/cryptsetup); recent
 # Windows 11 volumes were otherwise rejected, so GNOME Files could not unlock the Windows partition.
 # Resources: Adreno GPU page (build-resources.sh, patches/resources).
-mkdir -p $M/tmp/lc; cp /work/out/libcamera/*.deb /work/out/cryptsetup/*.deb /work/out/resources/*.deb $M/tmp/lc/
+# Fingerprint: libfprint with SDCP (extra/libfprint: MR !547 plus the model certificate fix); without SDCP the
+# EgisTec 1c7a:05a1 keeps no enrolled print.
+mkdir -p $M/tmp/lc; cp /work/out/libcamera/*.deb /work/out/cryptsetup/*.deb /work/out/resources/*.deb /work/out/libfprint/libfprint-2-2_*.deb /work/out/libfprint/gir1.2-fprint-2.0_*.deb $M/tmp/lc/
 chroot $M /bin/bash -euxc '
 debs=(); pk=()
 for d in /tmp/lc/*.deb; do p=$(dpkg-deb -f "$d" Package)
@@ -370,6 +369,10 @@ dpkg -i "${debs[@]}"; apt-mark hold "${pk[@]}"; rm -rf /tmp/lc
 # Holds do not stop every frontend (GNOME Software put stock libcamera back over ours): pin the +sb4edge builds too.
 printf "Package: %s\nPin: version *+sb4edge*\nPin-Priority: 1001\n" "${pk[*]}" > /etc/apt/preferences.d/sb4edge-rebuilt
 dpkg-query -W -f="\${Version}" libcryptsetup12 | grep -q sb4edge
+dpkg-query -W -f="\${Version}" libfprint-2-2 | grep -q sb4edge
+# Fingerprint for sudo, polkit and login too (common-auth): one try, 10 s, then the password prompt as before.
+DEBIAN_FRONTEND=noninteractive pam-auth-update --enable fprintd
+grep -q pam_fprintd.so /etc/pam.d/common-auth
 ! dpkg-query -W -f="\${Status}" resources 2>/dev/null | grep -q "ok installed" || dpkg-query -W -f="\${Version}" resources | grep -q sb4edge'
 install -Dm644 /work/extra/libcamera/ov02c10.yaml $M/usr/share/libcamera/ipa/simple/ov02c10.yaml
 install -Dm644 /work/extra/libcamera/configuration.yaml $M/usr/share/libcamera/configuration.yaml
