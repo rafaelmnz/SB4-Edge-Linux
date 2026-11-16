@@ -122,6 +122,28 @@ implemented but not tested on hardware; **[open]** not solved.
   selects it**; the performance governor does. Geekbench 6 with boost + performance: ~2840-3010 single /
   ~14850-15100 multi (Windows class).
 
+## Video decoding and encoding
+
+- **Iris** video codec (`qcom,x1e80100-iris`, falls back to sm8550; node in hamoa.dtsi, disabled because the
+  firmware is signed per vendor). Enabled in the board dtsi with `qcvss8380.mbn` from Samsung's Windows graphics
+  driver (qcdx8380 31.0.178.0, the same package as the GPU zap shader) [verified 2026-11-16].
+- Exposed as V4L2 stateful devices `qcom-iris-decoder` / `qcom-iris-encoder`, not VAAPI (the Adreno GPU has no video
+  engine; Mesa has no VAAPI driver for it). GStreamer `v4l2h264dec`/`v4l2h265dec`/`v4l2vp9dec`/`v4l2av1dec` (rank
+  primary+1, so GNOME players use them by default) and `v4l2h264enc`/`v4l2h265enc`; ffmpeg/mpv `*_v4l2m2m`
+  (h264, hevc, vp9). Measured: 1080p H.264 650 fps at 32 % of one core (software: 398 %), 4K HEVC 240 fps at 43 %.
+  VP9 1080p and AV1 720p decode verified (~500 fps, ~40 %). Only 4:2:0 8-bit main profiles: a VP9 profile 1 / AV1
+  high (4:4:4) stream stalls or fails to negotiate (test clips from videotestsrc need format=I420).
+  Works after a cold boot with the codec in the board DT (kernel 7.4rc3-2).
+- Encoders: H.264 (baseline..high) and HEVC (main, main 10), NV12 input; no VP9/AV1 encode. Decoder profiles: H.264
+  baseline..high, HEVC main/main 10, VP9 profile 0, AV1 main.
+- Benchmark (`tools/video-bench.sh`, AC): encode 1080p H.264 411 fps / 49 % CPU (x264 veryfast 183 fps / 580 %),
+  4K HEVC 146 fps / 54 % (x265 veryfast 41 fps / 966 %); decode 4K HEVC 245 fps / 41 % (avdec 293 fps / 623 %),
+  AV1 1080p 429 fps (libaom 185); transcode 4K HEVC -> 4K H.264 hw->hw 98 fps / 27 % (sw 53 fps / 624 %). On easy
+  synthetic content the 12-core CPU decodes faster but uses 10-20x the CPU time.
+- GPU: Adreno X1-85 with Mesa 26.2.6: OpenGL 4.6, OpenGL ES 3.2, Vulkan 1.4 (turnip, conformant) [verified].
+- Browsers: Firefox can use V4L2-M2M through the system libavcodec (Mozilla bug 1833354) - untested here; the
+  Nightly build tested lacks its v4l2test probe helper.
+
 ## Audio
 
 - ADSP AudioReach. Four speakers: **WSA883x** (not WSA884x as in early DTs) at SoundWire addr 1/2 on two masters
@@ -229,8 +251,9 @@ implemented but not tested on hardware; **[open]** not solved.
 4. Fan tachometer; whether EC mode 0xEE changes the fan by itself.
 5. A safe way to give fingerprints to multiple Linux users (map Windows Hello prints to accounts, e.g. by reading
    the Windows WinBio database).
-6. GNOME: upstream the automatic brightness modes; gsd re-claiming the light sensor after iio-sensor-proxy restarts.
-7. 14" and 15.6" models: most of this applies; DT differences (USB-A port uses eusb6 on the 16").
+6. Browser hardware video decoding (Firefox V4L2-M2M, Chromium).
+7. GNOME: upstream the automatic brightness modes; gsd re-claiming the light sensor after iio-sensor-proxy restarts.
+8. 14" and 15.6" models: most of this applies; DT differences (USB-A port uses eusb6 on the 16").
 
 ## Sources and prior work
 

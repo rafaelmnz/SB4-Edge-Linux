@@ -581,3 +581,11 @@ Windows qcdxkm8380.sys: logging stripped; AUX diag escape at sub_140115C40 calls
   sign-file needs libcrypto.so.3 (gone in 27.04): kernel and modules use the 26.04 container (`docker/kernel`).
 - rEFInd always selected Ubuntu (`default_selection Ubuntu`). Removed so it starts on the last OS booted; stored
   in EFI/refind/vars (use_nvram false). sb4edge-refind-install copies the new refind.conf at the next boot.
+- Hardware video: Iris enabled (dtbo/iris.dts tested live with sb4_dtbo, then &iris in the board dtsi, kernel
+  7.4rc3-2). qcvss8380.mbn from the qcdx8380 31.0.178.0 package. HW encode then decode of 1080p H.264 (650 fps,
+  32 % CPU vs 398 % software, frames correct) and 4K HEVC (240 fps, 43 %). GStreamer ranks v4l2 decoders above
+  avdec_*; ffmpeg has h264/hevc/vp9_v4l2m2m.
+  After reboot on 7.4rc3-2: decoder/encoder probe at boot; VP9 1080p and AV1 720p decode verified once the test
+  clips were 4:2:0 (4:4:4 = VP9 profile 1 / AV1 high: VP9 stalls in preroll, AV1 not-negotiated).
+- Video benchmark (tools/video-bench.sh, AC power): see README "Hardware acceleration". Hardware encoders need NV12
+  input (I420 from rawvideoparse fails to negotiate). GPU: OpenGL 4.6 / ES 3.2 / Vulkan 1.4 (Mesa 26.2.6 turnip).

@@ -339,6 +339,9 @@ for c in parade,ps8830 samsung,galaxy-book4-edge-kbd-backlight samsung,galaxyboo
 done
 # SD card reader (sdhc_2 enabled, card detect gpio71) since 7.4rc2-12 (patches/sb4edge-local/0014)
 [[ $DTS == *"sdc2-card-det-state"* ]] || { echo "DTB lacks the SD card reader (0014)"; exit 1; }
+# Video codec (iris, qcvss8380.mbn from fw/) enabled since 7.4rc3-2
+[[ $DTS == *"qcvss8380.mbn"* ]] || { echo "DTB lacks the video codec (iris)"; exit 1; }
+[ -f "$FW/qcvss8380.mbn" ] || { echo "video codec firmware missing"; exit 1; }
 # The camera (CCI0 + CAMSS + OV02C10) is in the deb's DTB since 7.4rc2-10 (patches/sb4edge-local/0012), so the
 # default entries and installed systems have it; the separate camera-test entry is gone.
 ukify build --stub=/usr/lib/stubble/stubble.efi --linux="$I" --hwids=/work/overlay/hwids \

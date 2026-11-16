@@ -493,7 +493,7 @@ index 000000000000..d605cacb77b2
 +	};
 +};
 diff --git a/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge.dtsi b/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge.dtsi
-index 892ac4d0d1f7..ca81e0f91dfa 100644
+index 892ac4d0d1f7..4ec82f9fc42f 100644
 --- a/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge.dtsi
 +++ b/arch/arm64/boot/dts/qcom/x1-samsung-galaxy-book4-edge.dtsi
 @@ -203,10 +203,10 @@ linux,cma {
@@ -549,7 +549,7 @@ index 892ac4d0d1f7..ca81e0f91dfa 100644
  	eusb5_repeater: redriver@43 {
  		compatible = "nxp,ptn3222";
  		reg = <0x43>;
-@@ -929,6 +941,27 @@ &i2c13 {
+@@ -929,6 +941,33 @@ &i2c13 {
  	status = "okay";
  };
  
@@ -574,10 +574,16 @@ index 892ac4d0d1f7..ca81e0f91dfa 100644
 +	status = "okay";
 +};
 +
++&iris {
++	/* Video codec (H.264/HEVC/VP9/AV1 decode, H.264/HEVC encode); firmware from the Windows graphics driver */
++	firmware-name = "qcom/x1e80100/SAMSUNG/galaxy-book4-edge/qcvss8380.mbn";
++	status = "okay";
++};
++
  &lpass_tlmm {
  	spkr_01_sd_n_active: spkr-01-sd-n-active-state {
  		pins = "gpio12";
-@@ -952,7 +985,11 @@ &lpass_vamacro {
+@@ -952,7 +991,11 @@ &lpass_vamacro {
  	pinctrl-names = "default";
  
  	vdd-micb-supply = <&vreg_l1b_1p8>;
@@ -590,7 +596,7 @@ index 892ac4d0d1f7..ca81e0f91dfa 100644
  };
  
  &mdss {
-@@ -964,7 +1001,8 @@ &mdss_dp0 {
+@@ -964,7 +1007,8 @@ &mdss_dp0 {
  };
  
  &mdss_dp0_out {
@@ -600,7 +606,7 @@ index 892ac4d0d1f7..ca81e0f91dfa 100644
  	link-frequencies = /bits/ 64 <1620000000 2700000000 5400000000 8100000000>;
  };
  
-@@ -973,7 +1011,8 @@ &mdss_dp1 {
+@@ -973,7 +1017,8 @@ &mdss_dp1 {
  };
  
  &mdss_dp1_out {
@@ -610,7 +616,7 @@ index 892ac4d0d1f7..ca81e0f91dfa 100644
  	link-frequencies = /bits/ 64 <1620000000 2700000000 5400000000 8100000000>;
  };
  
-@@ -1120,28 +1159,26 @@ &swr0 {
+@@ -1120,28 +1165,26 @@ &swr0 {
  	pinctrl-0 = <&wsa_swr_active>, <&spkr_01_sd_n_active>;
  	pinctrl-names = "default";
  
@@ -653,7 +659,7 @@ index 892ac4d0d1f7..ca81e0f91dfa 100644
  	};
  };
  
-@@ -1173,28 +1210,26 @@ &swr3 {
+@@ -1173,28 +1216,26 @@ &swr3 {
  	pinctrl-0 = <&wsa2_swr_active>, <&spkr_23_sd_n_active>;
  	pinctrl-names = "default";
  
@@ -696,7 +702,7 @@ index 892ac4d0d1f7..ca81e0f91dfa 100644
  	};
  };
  
-@@ -1503,6 +1538,25 @@ usb_1_ss2_qmpphy_out_dp: endpoint@0 {
+@@ -1503,6 +1544,25 @@ usb_1_ss2_qmpphy_out_dp: endpoint@0 {
  };
  
  
@@ -722,7 +728,7 @@ index 892ac4d0d1f7..ca81e0f91dfa 100644
  /* MP0 goes to the USB-A port(USB3) and FPC */
  &usb_mp {
  	status = "okay";
-@@ -1527,3 +1581,6 @@ &usb_mp_qmpphy0 {
+@@ -1527,3 +1587,6 @@ &usb_mp_qmpphy0 {
  
  	status = "okay";
  };

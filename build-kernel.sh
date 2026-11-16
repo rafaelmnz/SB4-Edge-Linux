@@ -48,7 +48,7 @@ done
 cp .config /work/out/config-sb4edge
 
 make -j14 Image.gz modules dtbs 2>&1 | grep -E "error:|Error [0-9]" | tail -20
-make -j1 bindeb-pkg KDEB_PKGVERSION=7.4rc3-1 >/work/logs/deb.log 2>&1
+make -j1 bindeb-pkg KDEB_PKGVERSION=7.4rc3-2 >/work/logs/deb.log 2>&1
 rm -f /work/out/*.deb
 mv /src/*.deb /work/out/
 ls -la /work/out

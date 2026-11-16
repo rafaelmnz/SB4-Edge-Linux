@@ -36,6 +36,8 @@ Or build it yourself with `build.sh` (below).
 | USB-C (both ports) | works | SuperSpeed in both orientations, DisplayPort alt mode, charging |
 | USB-A | works | SuperSpeed |
 | HDMI | works | |
+| GPU (Adreno X1-85) | works | OpenGL 4.6, OpenGL ES 3.2, Vulkan 1.4 (Mesa) |
+| Video decoding/encoding (Iris) | works | hardware H.264, HEVC, VP9, AV1 decode and H.264/HEVC encode; see [Hardware acceleration](#hardware-acceleration) |
 | SD card reader | works | |
 | Battery, charging, fan profiles | works | charge limit (GNOME "Preserve battery health") |
 | Windows (BitLocker) partitions | works | opened in Files with the BitLocker password or recovery key |
@@ -50,7 +52,7 @@ Known issues: switching a USB-C port from DisplayPort back to USB 3 can fail unt
   project's changes (`patches/kernel`), packaged as `linux-image-7.4.0-rc3-sb4edge`, wrapped in the stubble EFI
   stub so the devicetree is chosen from the SMBIOS hardware IDs.
 - **Out-of-tree drivers** (`extra/`): EC battery and keyboard, USB-C (retimers and PD controller helper).
-- **Firmware** from the Windows drivers (`fw/`, `windows-files/`): ADSP/CDSP, Wi-Fi board data, audio modules.
+- **Firmware** from the Windows drivers (`fw/`, `windows-files/`): ADSP/CDSP, GPU, video codec, Wi-Fi board data, audio modules.
 - **Audio** (`overlay/audio`): topology, UCM for the four speakers, microphone setup, Fluence.
 - **Ambient light sensor** (`overlay/sensors`): the VEML3328 sits behind the ADSP (Qualcomm Sensor Core); Qualcomm's
   `adsprpcd` serves the sensor registry, `libssc` + iio-sensor-proxy 3.9 read it, GNOME adjusts the screen,
@@ -69,6 +71,46 @@ Known issues: switching a USB-C port from DisplayPort back to USB 3 can fail unt
   Prints live on the chip and are shared with Windows: fingers enrolled in Windows Hello are picked up for Linux
   login at every boot and login (`overlay/fingerprint/sb4edge-fingerprint-import`, single-user systems); enrolling
   the same finger in both makes each system delete the other's copy (see [INSTALL.md](INSTALL.md)).
+
+## Hardware acceleration
+
+**Graphics (Adreno X1-85, Mesa 26.2):** OpenGL 4.6, OpenGL ES 3.2, Vulkan 1.4 (turnip, conformant). GNOME, browsers
+and games render on the GPU.
+
+**Video (Iris video engine, kernel `iris` driver):** decoding and encoding are done by a dedicated block, not the GPU,
+and are exposed as V4L2 devices (`qcom-iris-decoder`, `qcom-iris-encoder`), not VAAPI.
+
+| Codec | Decode | Encode | Profiles |
+|---|---|---|---|
+| H.264 | yes | yes | baseline, main, high |
+| HEVC (H.265) | yes | yes | main, main 10 |
+| VP9 | yes | no | profile 0 (4:2:0 8-bit) |
+| AV1 | yes | no | main |
+
+- **GNOME video players and anything GStreamer-based** use it automatically (`v4l2h264dec`, `v4l2h265dec`,
+  `v4l2vp9dec`, `v4l2av1dec` outrank the software decoders; encoders `v4l2h264enc`, `v4l2h265enc`).
+- **mpv / ffmpeg:** `mpv --hwdec=v4l2m2m-copy`, `ffmpeg -c:v h264_v4l2m2m` (also `hevc_`, `vp9_`).
+- **Browsers:** Firefox and Chromium still decode video in software here (their Linux builds expect VAAPI; Firefox's
+  V4L2 path is untested).
+
+**Speed** (`tools/video-bench.sh`, on AC power, synthetic moving test pattern; CPU = % of one core, 12 cores = 1200 %):
+
+| Task | Software | CPU | Hardware | CPU |
+|---|---|---|---|---|
+| Encode H.264 1080p | 183 fps (x264 veryfast) | 580 % | **411 fps** | 49 % |
+| Encode H.264 4K | 58 fps (x264 veryfast) | 596 % | **152 fps** | 59 % |
+| Encode HEVC 4K | 41 fps (x265 veryfast) | 966 % | **146 fps** | 54 % |
+| Decode H.264 1080p | 968 fps | 496 % | 435 fps | **24 %** |
+| Decode H.264 4K | 364 fps | 656 % | 167 fps | **29 %** |
+| Decode HEVC 4K | 293 fps | 623 % | 245 fps | **41 %** |
+| Decode VP9 1080p | 1035 fps | 329 % | 556 fps | **36 %** |
+| Decode AV1 1080p | 185 fps (libaom) | 99 % | **429 fps** | 38 % |
+| Transcode 4K HEVC → 4K H.264 | 53 fps | 624 % | **98 fps** | 27 % |
+| Transcode 4K HEVC → 1080p H.264 | 136 fps | 642 % | **177 fps** | 72 % (scaling on CPU) |
+
+Encoding and transcoding are 1.3-3.5x faster in hardware with a tenth of the CPU. For decoding, the 12-core CPU
+can be faster on this easy test content, but hardware decodes every format well above real time (4K at 167-245 fps)
+at 3-15 % of the CPU, which is what saves battery and keeps the fans quiet during playback.
 
 ## Review and reuse (people and AI models)
 

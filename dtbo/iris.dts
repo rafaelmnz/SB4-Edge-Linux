@@ -1,0 +1,11 @@
+/dts-v1/;
+/plugin/;
+/*
+ * Video codec (Iris, H.264/HEVC/VP9 decode via V4L2). The node is in hamoa.dtsi, disabled because the firmware
+ * is signed per vendor: qcvss8380.mbn from Samsung's Windows graphics driver (qcdx8380, 31.0.178.0).
+ * Test with sb4_dtbo before adding it to the board dtsi.
+ */
+&iris {
+	firmware-name = "qcom/x1e80100/SAMSUNG/galaxy-book4-edge/qcvss8380.mbn";
+	status = "okay";
+};
