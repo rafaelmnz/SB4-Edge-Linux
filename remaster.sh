@@ -367,6 +367,8 @@ debs=(); pk=()
 for d in /tmp/lc/*.deb; do p=$(dpkg-deb -f "$d" Package)
     if dpkg-query -W -f="\${Status}" "$p" 2>/dev/null | grep -q "ok installed"; then debs+=("$d"); pk+=("$p"); fi; done
 dpkg -i "${debs[@]}"; apt-mark hold "${pk[@]}"; rm -rf /tmp/lc
+# Holds do not stop every frontend (GNOME Software put stock libcamera back over ours): pin the +sb4edge builds too.
+printf "Package: %s\nPin: version *+sb4edge*\nPin-Priority: 1001\n" "${pk[*]}" > /etc/apt/preferences.d/sb4edge-rebuilt
 dpkg-query -W -f="\${Version}" libcryptsetup12 | grep -q sb4edge
 ! dpkg-query -W -f="\${Status}" resources 2>/dev/null | grep -q "ok installed" || dpkg-query -W -f="\${Version}" resources | grep -q sb4edge'
 install -Dm644 /work/extra/libcamera/ov02c10.yaml $M/usr/share/libcamera/ipa/simple/ov02c10.yaml
