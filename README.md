@@ -29,6 +29,7 @@ Or build it yourself with `build.sh` (below).
 | Display (2880x1800 OLED, 120 Hz) | works | brightness, VRR; brightness remembered across boots |
 | Ambient light sensor | works | automatic screen brightness (GNOME, with two modes: around the slider or follow room light) and keyboard backlight (off above 100 lux, on below 50 lux, like Windows) |
 | Keyboard, touchpad | works | keyboard backlight remembered across boots |
+| Touchscreen | works | Goodix (I²C HID), 10 fingers at once |
 | Wi-Fi 7 (WCN7850), Bluetooth | works | |
 | Speakers (4x WSA883x), headphone jack | works | |
 | Microphones | works | Qualcomm Fluence noise suppression on the ADSP |

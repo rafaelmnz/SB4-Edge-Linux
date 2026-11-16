@@ -589,3 +589,5 @@ Windows qcdxkm8380.sys: logging stripped; AUX diag escape at sub_140115C40 calls
   clips were 4:2:0 (4:4:4 = VP9 profile 1 / AV1 high: VP9 stalls in preroll, AV1 not-negotiated).
 - Video benchmark (tools/video-bench.sh, AC power): see README "Hardware acceleration". Hardware encoders need NV12
   input (I420 from rawvideoparse fails to negotiate). GPU: OpenGL 4.6 / ES 3.2 / Vulkan 1.4 (Mesa 26.2.6 turnip).
+- Touchscreen (Goodix 27C6:0123, i2c8 0x5d, hid-multitouch): 10 slots; live test registered 10 fingers at once.
+  Touchpad 4D49:4150: 5 slots.

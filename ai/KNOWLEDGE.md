@@ -110,6 +110,10 @@ implemented but not tested on hardware; **[open]** not solved.
 
 ## Keyboard, Fn keys, fan, performance modes
 
+- Touchscreen: Goodix **27C6:0123**, HID over I2C on **i2c8** at 0x5d (`hid-descr-addr` 1), from the devicetree
+  series; hid-multitouch, 10 contacts, 28800 x 18000 at 84 units/mm (343 x 214 mm) [verified 2026-11-16: 10 fingers
+  at once]. Touchpad: 4D49:4150, 5 contacts.
+
 - Keyboard: i2c-hid 0CF2:9050. The Fn+F9 (keyboard light) key sends **vendor report 7, usage page 0xFF00**:
   `07 65 6e 65 00 bf` ("ene", 0xBF), press only; hid-generic maps nothing. The kbd module adds a HID driver that
   catches it and steps the light 0-1-2-3. It must set `HID_QUIRK_INPUT_PER_APP` (as hid-generic does) or all
