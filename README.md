@@ -64,6 +64,18 @@ Known issues: switching a USB-C port from DisplayPort back to USB 3 can fail unt
   login at every boot and login (`overlay/fingerprint/sb4edge-fingerprint-import`, single-user systems); enrolling
   the same finger in both makes each system delete the other's copy (see [INSTALL.md](INSTALL.md)).
 
+## Review and reuse (people and AI models)
+
+This project was developed with an AI coding agent (Claude Code) on real hardware. To review it, or to redo the work
+another way (another distribution, upstream patches):
+
+- [`ai/AUDIT.md`](ai/AUDIT.md): what to review, what was tested and how, the security-sensitive parts.
+- [`ai/KNOWLEDGE.md`](ai/KNOWLEDGE.md): the hardware facts and how each part was solved, independent of Ubuntu.
+- [`AGENTS.md`](AGENTS.md): repository layout, build and safety rules for coding agents.
+- **`sb4edge-ai-bundle.md`** on each [release](https://github.com/rafaelmnz/SB4-Edge-Linux/releases): all of the
+  above, the development notes and every text source in one file (~800 KB) with a SHA-256 manifest. Give it to an AI
+  model as-is. Rebuild it with `scripts/make-ai-bundle.py`.
+
 ## Building
 
 Needs an arm64 host with Docker (an Apple Silicon Mac works) and about 60 GB of disk.
