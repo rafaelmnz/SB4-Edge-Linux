@@ -64,6 +64,36 @@ turn Secure Boot off in the BIOS and boot from it.
 They are included so the image can be built, and remain the property of their owners. Upstream sources used:
 Linux, quic/fastrpc, libssc, iio-sensor-proxy, rEFInd, Ubuntu.
 
+## Credits and references
+
+This project builds on other people's work on this laptop and on the Snapdragon X platform:
+
+- **Maxim Storetvedt** – Galaxy Book4 Edge devicetree series (v8, patchwork series 1177250), with Kirill A. Korinsky
+  and Marcus Glocker: the base of `patches/kernel` (0001–0003).
+- **hegjon – [omarchy-galaxy-book4-edge](https://github.com/hegjon/omarchy-galaxy-book4-edge)** (14"): ADSP audio
+  topology, four-speaker UCM, WSA883x and PipeWire upmix rules (`overlay/audio`), the USB-C PD helper
+  (`extra/usbc`), the Type-C retimer driver (`extra/gb4e-typec`), USB-C devicetree graph and fan curve.
+- **Saddytech – [Galaxy-Book4-Edge-linux](https://github.com/Saddytech/Galaxy-Book4-Edge-linux)**: the EC battery
+  driver (`extra/samsung-galaxybook-battery`), modified here.
+- **ciscobugger – [book4-edge-linux](https://github.com/ciscobugger/book4-edge-linux)** (15.6"): OV02C10 libcamera
+  sensor helper and tuning (`extra/libcamera`), EC command notes, DMIC clock reference.
+- **Nicola Nicodemo ([n1c0la84](https://github.com/n1c0la84))** – fingerprint reader enablement on the 14" (EgisTec on usb_2).
+- **jglathe – [linux_ms_dev_kit](https://github.com/jglathe/linux_ms_dev_kit)** and **[zensanp](https://github.com/zensanp)**'s 6.19 tree – X1E
+  devkit Ubuntu images and kernel, idle-state notes
+  ([Launchpad bug 2084591](https://bugs.launchpad.net/bugs/2084591)).
+- **joshuagrisham – [samsung-galaxybook-extras](https://github.com/joshuagrisham/samsung-galaxybook-extras)**,
+  **Maccraft123 – [it8987-qcom-tool](https://github.com/Maccraft123/it8987-qcom-tool)** and **icecream95**'s
+  xle-ec-tool: Samsung/EC references.
+- **Dylan Van Assche – [libssc](https://codeberg.org/DylanVanAssche/libssc)** and **Bastien Nocera –
+  [iio-sensor-proxy](https://gitlab.freedesktop.org/hadess/iio-sensor-proxy)**: Qualcomm Sensor Core support
+  (ambient light sensor).
+- **Qualcomm – [fastrpc](https://github.com/quic/fastrpc)**; **linux-msm –
+  [audioreach-topology](https://github.com/linux-msm/audioreach-topology)**,
+  [hexagonrpc](https://github.com/linux-msm/hexagonrpc); **AudioReach –
+  [audioreach-graphservices](https://github.com/AudioReach/audioreach-graphservices)**.
+- **[rEFInd](https://www.rodsbooks.com/refind/)** (Rod Smith), **[stubble](https://github.com/ubuntu/stubble)**,
+  **[alsa-ucm-conf](https://github.com/alsa-project/alsa-ucm-conf)**, and the mainline Linux Qualcomm maintainers.
+
 ## License
 
 GPL-2.0 (see `LICENSE`), except the third-party files above.
