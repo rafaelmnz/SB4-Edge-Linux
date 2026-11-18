@@ -26,7 +26,7 @@ their own Windows account would unlock this Linux account, sudo included.
 import glob, os, pwd, subprocess, sys, time
 import gi
 gi.require_version('FPrint', '2.0')
-from gi.repository import FPrint
+from gi.repository import FPrint, GLib
 
 FINGERS = {FPrint.Finger(i).value_nick: FPrint.Finger(i) for i in range(1, 11)}
 AUTO_ORDER = ['right-index', 'left-index', 'right-middle', 'left-middle', 'right-thumb', 'left-thumb',
@@ -228,7 +228,10 @@ def main():
         if len(new) > len(free):
             log('no free finger slots left for the remaining prints')
     finally:
-        dev.close_sync()
+        try:
+            dev.close_sync()
+        except GLib.Error:
+            pass             # the reader already went away (suspend, shutdown, USB reset)
 
 
 # Leave without Python's object teardown: freeing the libfprint/GUsb device during interpreter shutdown crashed in
@@ -238,6 +241,10 @@ try:
     code = 0
 except SystemExit as e:
     code = e.code
+except GLib.Error as e:
+    # The reader can disappear mid-read (suspend, shutdown, USB reset): report it instead of filing a crash report.
+    print(f'fingerprint reader error: {e.message}', file=sys.stderr)
+    code = 0 if {'--auto', '--pam'} & set(sys.argv[1:]) else 1
 if not isinstance(code, int):
     if code is not None:
         print(code, file=sys.stderr)

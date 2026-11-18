@@ -15,4 +15,6 @@ $G checkout -f -q "$TAG"
 $G clean -fdq
 $G am -q /work/patches/kernel/000[123]-*.patch
 $G apply /work/patches/kernel/0004-sb4edge-local-changes.patch
+# Iris (video decoder): timestamp metadata index read one past its array while seeking (UBSAN); not fixed upstream yet.
+$G apply /work/patches/kernel/0005-media-iris-wrap-the-timestamp-metadata-index-right-a.patch
 $G log --oneline -4

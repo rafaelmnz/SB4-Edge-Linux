@@ -1,0 +1,36 @@
+From 579c1e182b315c73045e59753465998046bb6eef Mon Sep 17 00:00:00 2001
+From: rafaelmnz <69637001+rafaelmnz@users.noreply.github.com>
+Date: Wed, 18 Nov 2026 13:09:23 -0500
+Subject: [PATCH] media: iris: wrap the timestamp metadata index right after
+ advancing it
+
+iris_set_ts_metadata() wraps metadata_idx only at the start of its next call, so after every
+VIDEO_MAX_FRAME (32) queued buffers the index sits at 32 until another buffer is queued. When a
+decoded buffer whose timestamp is not in the table completes in that window (seen while seeking),
+iris_get_ts_metadata() falls back to tss[metadata_idx] and reads one entry past the array:
+
+  UBSAN: array-index-out-of-bounds in drivers/media/platform/qcom/iris/iris_buffer.c:869:26
+  index 32 is out of range for type 'iris_ts_metadata [32]'
+
+Wrap the index as soon as it is advanced, so it always points inside tss[].
+---
+ drivers/media/platform/qcom/iris/iris_common.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/media/platform/qcom/iris/iris_common.c b/drivers/media/platform/qcom/iris/iris_common.c
+index 2583656..752e9e3 100644
+--- a/drivers/media/platform/qcom/iris/iris_common.c
++++ b/drivers/media/platform/qcom/iris/iris_common.c
+@@ -44,6 +44,9 @@ void iris_set_ts_metadata(struct iris_inst *inst, struct vb2_v4l2_buffer *vbuf)
+ 	inst->tss[inst->metadata_idx].ts_ns = vb->timestamp;
+ 
+ 	inst->metadata_idx++;
++	/* wrap now: iris_get_ts_metadata() may read tss[metadata_idx] before the next call */
++	if (inst->metadata_idx >= ARRAY_SIZE(inst->tss))
++		inst->metadata_idx = 0;
+ }
+ 
+ int iris_process_streamon_input(struct iris_inst *inst)
+-- 
+2.55.0
+

@@ -639,3 +639,11 @@ Windows qcdxkm8380.sys: logging stripped; AUX diag escape at sub_140115C40 calls
     user name" at every boot): removed and dpkg-excluded. brltty's udev rule (invalid line 611) is masked.
   - Not fixable here: the ChatGPT app polls a Codex "primary runtime" manifest that does not exist for linux-aarch64
     (404 about twice a minute); localsearch logs "Could not ask extractor to update" when the on-demand extractor is not running.
+- Video playback/seeking (2026-11-18): GStreamer's playbin (Showtime, the Files previewer) decodes H.264 with
+  v4l2h264dec on Iris. Seeking logged "UBSAN: array-index-out-of-bounds in .../iris/iris_buffer.c:869 index 32 is out
+  of range for type 'iris_ts_metadata [32]'": iris_set_ts_metadata() wraps metadata_idx only on its next call, so
+  iris_get_ts_metadata() can read tss[32]. patches/kernel/0005 wraps it right after the increment (mainline and
+  linux-next still have the bug). The installed laptop got the same fix as an out-of-tree qcom-iris.ko in
+  /lib/modules/$KVER/updates/ (delete it once a kernel built with 0005 is installed, or it shadows that kernel's module).
+- sb4edge-fingerprint-import: the reader can vanish mid-read (suspend/shutdown, "g-usb-device-error-quark: device was
+  disconnected"); the GLib error is now reported instead of leaving a crash report.
