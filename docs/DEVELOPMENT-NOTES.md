@@ -289,7 +289,8 @@ ISO rebuilt with this driver 2026-11-14 13:09 EST: sha256 c69dc67556a4ce1cd58ebc
 - Fixes: patches/sb4edge-local/0010-dmic-2p4mhz.patch (qcom,dmic-sample-rate = <2400000>, kernel deb 7.4rc2-9);
   overlay/audio/51-sb4edge-mic.conf (WirePlumber: mic node 4 channels, positions FL FR AUX0 AUX1, so mono/stereo apps get the
   two real mics). Snapshot's enable-audio-recording=false override removed (overlay/camera/90-sb4edge-snapshot.gschema.override deleted).
-- "failed to load gen70500_sqe.fw" at boot is benign: the initramfs probe misses it, the GPU loads sqe + GMU v4.3.17 on first open.
+- "failed to load gen70500_sqe.fw" at boot: the initramfs probe missed it and the GPU only loaded sqe + GMU v4.3.17 after
+  the switch to the real root. Since 2026-11-18 overlay/sb4edge-gpu-dracut.conf puts both into the initramfs.
 
 ## Performance modes: Quiet / Optimized / Performance (2026-11-15)
 
@@ -619,3 +620,22 @@ Windows qcdxkm8380.sys: logging stripped; AUX diag escape at sub_140115C40 calls
   temperature graph is pinned to 0-100 °C after every point (add_unclamped_point() turns autoscaling back on, so
   setting it once at setup did nothing). Verified in an Xvfb render: sidebar "0 % · 39 °C", 40 °C at 40 % of the
   graph. No userspace can run work on the NPU yet (no libcdsprpc / QNN HTP; onnxruntime has no QNN provider).
+- Log cleanup on the installed laptop (2026-11-17/18), errors repeated at every boot or login:
+  - Ubuntu Dock: after an HDMI hotplug rebuilt the docks, handlers of the destroyed docks kept firing on every window
+    move and workspace switch (~1300 "DashToDock ... has been already disposed" stack traces per 30 min, from
+    theming.js). AppIndicators threw "SettingsManager.getDefault() is null" whenever the shell disabled extensions for
+    the lock screen. overlay/gnome/sb4edge-dock-fix patches both, re-applied by an apt hook after every update of
+    gnome-shell-ubuntu-extensions.
+  - The PMIC RTC is read-only here: every boot started at 2024-07-05, systemd then raised the clock to its build date,
+    and chrony's NTS handshakes failed ("certificate not yet valid") until the bootstrap server stepped the clock
+    ~45 s in (46 days). fake-hwclock saves the time at shutdown and hourly and restores it in early boot.
+  - alsa-base's "install snd" line failed at every boot inside the initramfs (busybox modprobe rejects
+    --ignore-install/--use-blacklist; snd-ioctl32 does not exist on arm64 either): removed in remaster.sh.
+  - 66-sb4edge-hdmi-edid.rules is copied into the initramfs, where its RUN script does not exist ("Failed to find and
+    pin callout binary"): TEST== guard.
+  - authd and USBGuard are not installed, but Ubuntu's defaults made every login/unlock log "PAM service gdm-authd
+    was not found" and gsd-usb-protection "Failed to fetch USBGuard parameters": overlay/gnome/99_sb4edge.gschema.override.
+  - libmalcontent-common ships D-Bus files for daemons that are not installed (their users do not exist; "Invalid
+    user name" at every boot): removed and dpkg-excluded. brltty's udev rule (invalid line 611) is masked.
+  - Not fixable here: the ChatGPT app polls a Codex "primary runtime" manifest that does not exist for linux-aarch64
+    (404 about twice a minute); localsearch logs "Could not ask extractor to update" when the on-demand extractor is not running.

@@ -242,6 +242,9 @@ implemented but not tested on hardware; **[open]** not solved.
   (-110) and idle power does not improve (5.12 vs 4.99 W) [verified]. `mem_sleep_default=s2idle` (deep is not
   offered). `sb4edge-hdmi-sleep-guard` keeps the laptop from suspending with an HDMI adapter attached, since
   unplugging it during/after sleep crashed the machine.
+- The PMIC RTC (rtc-pm8xxx) is read-only on this laptop and keeps no time across boots (it reads 2024-07-05):
+  install fake-hwclock (or anything that restores a saved time early), otherwise NTS time sync fails its certificate
+  checks until the clock is stepped, and early logs carry wrong dates.
 - Ubuntu 27.04 has no arm64 desktop ISO yet: the image is Ubuntu 26.10's ISO with every squashfs layer
   dist-upgraded to 27.04 (ports.ubuntu.com) in `remaster.sh`.
 

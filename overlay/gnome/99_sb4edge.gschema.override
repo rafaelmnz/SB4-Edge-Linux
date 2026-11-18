@@ -1,0 +1,9 @@
+# sb4edge (not package-owned, survives updates):
+# authd (Ubuntu cloud/OIDC login) is not installed; trying it logged "PAM service gdm-authd was not found" at every
+# login/unlock.
+[com.ubuntu.login-screen]
+enable-authd-authentication=false
+
+# USBGuard is not installed; GNOME's USB protection logged "Failed to fetch USBGuard parameters".
+[org.gnome.desktop.privacy]
+usb-protection=false

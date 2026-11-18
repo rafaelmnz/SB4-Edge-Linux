@@ -1,0 +1,8 @@
+# sb4edge: libmalcontent-common ships D-Bus activation files for malcontent-webd/timerd, whose daemons and system
+# users are not installed; dbus-daemon logged "Invalid user name" at every boot. Never install them.
+path-exclude=/usr/share/dbus-1/system-services/org.freedesktop.MalcontentWeb1.service
+path-exclude=/usr/share/dbus-1/system-services/org.freedesktop.MalcontentTimer1.service
+path-exclude=/usr/share/dbus-1/system-services/org.freedesktop.MalcontentTimer1.ExtensionAgent.service
+path-exclude=/usr/share/dbus-1/system.d/org.freedesktop.MalcontentWeb1.conf
+path-exclude=/usr/share/dbus-1/system.d/org.freedesktop.MalcontentTimer1.conf
+path-exclude=/usr/share/dbus-1/system.d/org.freedesktop.MalcontentTimer1.ExtensionAgent.conf

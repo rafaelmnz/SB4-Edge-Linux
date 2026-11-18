@@ -1,0 +1,77 @@
+#!/usr/bin/python3 -I
+# sb4edge: fixes for Ubuntu's bundled GNOME Shell extensions (package gnome-shell-ubuntu-extensions).
+# Idempotent; re-run by /etc/apt/apt.conf.d/99-sb4edge-dock-fix after package updates. Each patch is applied
+# on its own and skipped (with a message) if upstream changed the code it expects.
+#
+# 1. Ubuntu Dock theming.js: a dock's Transparency stops working once that dock is destroyed. Without it, after a
+#    monitor hotplug (HDMI) rebuilds the docks, leftover handlers of the old dock keep firing on every window move /
+#    workspace switch and gnome-shell logs hundreds of
+#      "Object Gjs_ubuntu-dock_ubuntu_com_docking_DashToDock (...), has been already disposed" stack traces.
+# 2. AppIndicators settingsManager.js: the shell disables extensions while the screen is locked; tray icons that
+#    update during that teardown called getDefaultGSettings() on a destroyed SettingsManager and threw
+#      TypeError: can't access property "gsettings", SettingsManager.getDefault() is null
+#    It now falls back to the last valid GSettings object.
+import os
+import shutil
+import sys
+
+EXT = "/usr/share/gnome-shell/extensions"
+DOCK_MARK = "sb4edge-dock-fix"
+APPIND_MARK = "sb4edge-appindicator-fix"
+
+PATCHES = [
+    (f"{EXT}/ubuntu-dock@ubuntu.com/theming.js", DOCK_MARK, [
+        # Transparency constructor: watch our own dock's destruction
+        ("        this._signalsHandler = new Utils.GlobalSignalsHandler();\n        this._trackedWindows = new Map();\n",
+         "        this._signalsHandler = new Utils.GlobalSignalsHandler();\n        this._trackedWindows = new Map();\n"
+         "        // " + DOCK_MARK + ": never touch this dock again once it is destroyed\n"
+         "        this._destroyed = false;\n"
+         "        dock.connect('destroy', () => this.destroy());\n"),
+        ("    enable() {\n        // ensure I never double-register/inject\n",
+         "    enable() {\n        if (this._destroyed)\n            return;\n        // ensure I never double-register/inject\n"),
+        ("    destroy() {\n        this.disable();\n        this._signalsHandler.destroy();\n    }\n",
+         "    destroy() {\n        if (this._destroyed)\n            return;\n        this._destroyed = true;\n"
+         "        this.disable();\n        this._signalsHandler.destroy();\n    }\n"),
+        ("    _onWindowActorAdded(container, metaWindowActor) {\n",
+         "    _onWindowActorAdded(container, metaWindowActor) {\n        if (this._destroyed)\n            return;\n"
+         "        this._trackedWindows.get(metaWindowActor)?.forEach(id => metaWindowActor.disconnect(id));\n"),
+        ("    _updateSolidStyle() {\n",
+         "    _updateSolidStyle() {\n        if (this._destroyed)\n            return;\n"),
+    ]),
+    (f"{EXT}/ubuntu-appindicators@ubuntu.com/settingsManager.js", APPIND_MARK, [
+        ("let settingsManager;\n",
+         "let settingsManager;\n"
+         "// " + APPIND_MARK + ": last valid GSettings, used while the manager is torn down (screen lock)\n"
+         "let lastGSettings = null;\n"),
+        ("        this._gsettings = extension.getSettings();\n",
+         "        this._gsettings = extension.getSettings();\n        lastGSettings = this._gsettings;\n"),
+        ("    return SettingsManager.getDefault().gsettings;\n",
+         "    return SettingsManager.getDefault()?.gsettings ?? lastGSettings;\n"),
+    ]),
+]
+
+
+def apply(path, mark, edits):
+    try:
+        src = open(path, encoding="utf-8").read()
+    except FileNotFoundError:
+        return
+    if mark in src:
+        return
+    name = os.path.basename(path)
+    for old, new in edits:
+        if src.count(old) != 1:
+            print(f"{mark}: {name} layout changed, not patching (looked for: {old.strip().splitlines()[0]!r})",
+                  file=sys.stderr)
+            return
+        src = src.replace(old, new)
+    tmp = path + ".sb4edge-tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(src)
+    shutil.copymode(path, tmp)
+    os.replace(tmp, path)
+    print(f"{mark}: patched {path} (takes effect at next login)")
+
+
+for path, mark, edits in PATCHES:
+    apply(path, mark, edits)

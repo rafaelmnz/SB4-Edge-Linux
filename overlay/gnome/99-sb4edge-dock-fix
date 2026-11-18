@@ -1,0 +1,3 @@
+// sb4edge: re-apply the fixes to Ubuntu's bundled GNOME Shell extensions (dock "already disposed" spam, AppIndicators
+// error at screen lock) after gnome-shell-ubuntu-extensions is updated. See /usr/lib/sb4edge/sb4edge-dock-fix.
+DPkg::Post-Invoke { "[ -x /usr/lib/sb4edge/sb4edge-dock-fix ] && /usr/lib/sb4edge/sb4edge-dock-fix; true"; };

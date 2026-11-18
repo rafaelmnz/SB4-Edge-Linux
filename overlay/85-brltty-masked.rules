@@ -1,0 +1,2 @@
+# sb4edge: masks /usr/lib/udev/rules.d/85-brltty.rules (no braille display here; its line 611 is invalid and it
+# can grab USB-serial adapters). Delete this file to restore braille support.

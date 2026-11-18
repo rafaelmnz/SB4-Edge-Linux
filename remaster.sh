@@ -113,7 +113,7 @@ export DEBIAN_FRONTEND=noninteractive FK_MACHINE=none
 mkdir -p /tmp/net-sources; cp /etc/apt/sources.list.d/ubuntu.sources /tmp/net-sources/
 APT='-o Dir::Etc::sourcelist=/dev/null -o Dir::Etc::sourceparts=/tmp/net-sources'
 apt-get \$APT update
-apt-get \$APT install -y --no-install-recommends curl openssh-server nvtop gstreamer1.0-plugins-bad libopenh264-8 systemd-ukify stubble python3-pefile ddcutil libprotobuf-c1
+apt-get \$APT install -y --no-install-recommends curl openssh-server nvtop gstreamer1.0-plugins-bad libopenh264-8 systemd-ukify stubble python3-pefile ddcutil libprotobuf-c1 fake-hwclock
 systemctl enable ssh.service
 apt-get clean; rm -rf /tmp/net-sources
 "
@@ -190,6 +190,24 @@ install -Dm644 /work/overlay/sb4edge-battery.conf "$B/etc/modprobe.d/sb4edge-bat
 install -Dm644 /work/overlay/sb4edge-battery-dracut.conf "$B/etc/dracut.conf.d/sb4edge-battery.conf"
 install -Dm644 /work/display/sb4edge-edid.bin "$B/usr/lib/firmware/edid/sb4edge-edid.bin"
 install -Dm644 /work/overlay/sb4edge-edid-dracut.conf "$B/etc/dracut.conf.d/sb4edge-edid.conf"
+# Adreno X1-85 microcode in the initramfs: msm probes there, and without it "failed to load gen70500_sqe.fw" was
+# logged at every boot and the GPU only came up after the switch to the real root.
+install -Dm644 /work/overlay/sb4edge-gpu-dracut.conf "$B/etc/dracut.conf.d/sb4edge-gpu.conf"
+# alsa-base's "install snd" line (preloads snd-seq) fails at every boot: in the initramfs modprobe is busybox, which
+# rejects --ignore-install/--use-blacklist. snd-seq autoloads through its devname:snd/seq alias anyway.
+sb4edge_cleanup() { # sb4edge_cleanup <root>: also re-run on the standard layer after its upgrade
+	[ ! -f "$1/etc/modprobe.d/alsa-base.conf" ] || sed -i '/^install snd \/sbin\/modprobe --ignore-install snd /d' "$1/etc/modprobe.d/alsa-base.conf"
+	if grep -qs "^install snd " "$1/etc/modprobe.d/alsa-base.conf"; then echo "alsa-base fix failed in $1"; exit 1; fi
+	# libmalcontent-common ships D-Bus files for the malcontent-webd/timerd daemons, which are not installed (nor
+	# their system users): dbus-daemon logged "Invalid user name" at every boot. dpkg excludes keep them out.
+	rm -f "$1"/usr/share/dbus-1/system-services/org.freedesktop.Malcontent{Web1,Timer1,Timer1.ExtensionAgent}.service \
+	      "$1"/usr/share/dbus-1/system.d/org.freedesktop.Malcontent{Web1,Timer1,Timer1.ExtensionAgent}.conf
+}
+install -Dm644 /work/overlay/sb4edge-no-malcontent-daemons "$B/etc/dpkg/dpkg.cfg.d/sb4edge-no-malcontent-daemons"
+sb4edge_cleanup "$B"
+# brltty's udev rule has an invalid line (logged at every boot) and grabs USB-serial adapters; masked (no braille
+# display). The package stays: ubuntu-desktop-minimal depends on it.
+install -Dm644 /work/overlay/85-brltty-masked.rules "$B/etc/udev/rules.d/85-brltty.rules"
 # Variable refresh: kernel patch 0015 (msm AVR), enabled by msm.vrr=3 in overlay/sb4edge-grub.cfg. It replaced the
 # 60/120 Hz AC/battery switcher (display/sb4edge-refresh, kept in the project but not installed).
 # USB-C power roles (omarchy's usbc helper). Verified on the 16" (third boot): both S2MM006 answer at 0x33 on
@@ -252,6 +270,18 @@ PY
 chroot "$B" glib-compile-schemas "/usr/share/gnome-shell/extensions/$EXT/schemas"
 chmod -R u=rwX,go=rX "$B/usr/share/gnome-shell/extensions/$EXT"
 install -Dm644 /work/overlay/gnome/90-sb4edge-extensions.gschema.override "$B/usr/share/glib-2.0/schemas/90-sb4edge-extensions.gschema.override"
+# authd (cloud/OIDC login) and USBGuard are not installed: Ubuntu's defaults made every login/unlock log "PAM service
+# gdm-authd was not found" and GNOME's USB protection "Failed to fetch USBGuard parameters".
+install -Dm644 /work/overlay/gnome/99_sb4edge.gschema.override "$B/usr/share/glib-2.0/schemas/99_sb4edge.gschema.override"
+# Ubuntu's bundled extensions: the dock kept handlers of docks destroyed by a monitor hotplug (hundreds of "already
+# disposed" stack traces per minute), AppIndicators threw at every screen lock. Patched here and after every update
+# of gnome-shell-ubuntu-extensions (apt hook).
+install -Dm755 /work/overlay/gnome/sb4edge-dock-fix "$B/usr/lib/sb4edge/sb4edge-dock-fix"
+install -Dm644 /work/overlay/gnome/99-sb4edge-dock-fix "$B/etc/apt/apt.conf.d/99-sb4edge-dock-fix"
+chroot "$B" /usr/lib/sb4edge/sb4edge-dock-fix
+for f in ubuntu-dock@ubuntu.com/theming.js:sb4edge-dock-fix ubuntu-appindicators@ubuntu.com/settingsManager.js:sb4edge-appindicator-fix; do
+	X="$B/usr/share/gnome-shell/extensions/${f%%:*}"; [ ! -f "$X" ] || grep -q "${f#*:}" "$X" || { echo "extension patch failed: $f"; exit 1; }
+done
 chroot "$B" glib-compile-schemas /usr/share/glib-2.0/schemas
 # Panel and keyboard backlight kept across boots (overlay/backlight): at shutdown the login screen resets the brightness to the
 # value it cached at boot before systemd-backlight saves it, so every boot started at that value. A service records
@@ -394,6 +424,9 @@ mount -t squashfs -o loop,ro $SRC/casper/minimal.squashfs /iso/std-b
 mount -t overlay overlay -o lowerdir=/iso/std-b,upperdir=$S,workdir=/iso/std-w,index=off,redirect_dir=off,metacopy=off $M
 for d in proc sys dev dev/pts; do mount --bind /$d $M/$d; done
 chroot_net_upgrade $M
+# The standard layer's upgrade may bring its own copies of files fixed in the base layer: fix them here too.
+sb4edge_cleanup $M
+chroot $M /usr/lib/sb4edge/sb4edge-dock-fix
 # Camera: libcamera rebuilt with the OV02C10 sensor helper (extra/libcamera, out/libcamera). It lives in this
 # layer, so it is replaced here (a copy in the base layer would be shadowed). Only packages already installed
 # are replaced, and they are held so an archive update does not drop the helper.
