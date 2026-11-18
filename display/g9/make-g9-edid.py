@@ -13,7 +13,8 @@ import sys
 src, dst = sys.argv[1:3]
 e = bytearray(open(src, "rb").read())
 o = 256
-assert e[o] == 0x70 and e[o + 5] == 0x03, "block 2 is not DisplayID with Type I timings first"
+if len(e) < o + 8 or e[o] != 0x70 or e[o + 5] != 0x03:
+    sys.exit("block 2 is not DisplayID with Type I timings first; EDID not changed")
 n = e[o + 7] // 20
 slots = [o + 8 + 20 * i for i in range(n)]
 
@@ -23,8 +24,10 @@ def t(p):
     va = (e[p + 12] | e[p + 13] << 8) + 1
     return ha, va, pclk
 
-src60 = next(p for p in slots if t(p) == (5120, 1440, 46900))
-dst120 = next(p for p in slots if t(p)[:2] == (7680, 2160) and t(p)[2] == 222475)
+src60 = next((p for p in slots if t(p) == (5120, 1440, 46900)), None)
+dst120 = next((p for p in slots if t(p)[:2] == (7680, 2160) and t(p)[2] == 222475), None)
+if src60 is None or dst120 is None:      # another EDID (other mode or monitor firmware): leave it alone, no crash report
+    sys.exit("expected 5120x1440@60 / 7680x2160@120 timings not found; EDID not changed")
 new = bytearray(e[src60:src60 + 20])
 PCLK = 58647                          # 10 kHz units: 586.47 MHz -> 75.000 Hz on 5280 x 1481
 pclk = PCLK - 1

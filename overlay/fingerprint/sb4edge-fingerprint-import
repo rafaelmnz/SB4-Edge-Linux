@@ -182,4 +182,17 @@ def main():
         dev.close_sync()
 
 
-main()
+# Leave without Python's object teardown: freeing the libfprint/GUsb device during interpreter shutdown crashed in
+# libusb_unref_device (SIGBUS) after the work was already done, which left a crash report at every boot that ran it.
+try:
+    main()
+    code = 0
+except SystemExit as e:
+    code = e.code
+if not isinstance(code, int):
+    if code is not None:
+        print(code, file=sys.stderr)
+    code = 0 if code is None else 1
+sys.stdout.flush()
+sys.stderr.flush()
+os._exit(code)

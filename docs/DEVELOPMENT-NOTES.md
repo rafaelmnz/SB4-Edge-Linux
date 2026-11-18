@@ -603,3 +603,10 @@ Windows qcdxkm8380.sys: logging stripped; AUX diag escape at sub_140115C40 calls
   alternating rounds on AC: native 2880x1800 equal within noise (GL 974/961 vs 1037/835, Vulkan 4401/4271 vs
   4475/4313); 800x600 lower on 26.3 (GL 2227/1788 vs 1343/1406, Vulkan 22057/22859 vs 19275/22105). Same API
   versions (GL 4.6, ES 3.2, Vulkan 1.4; no Vulkan 1.5 yet). Kept Ubuntu's 26.2.6.
+- Crash sweep on the installed laptop (2026-11-18, separate session that patched files in place); fixed here at the source:
+  iio-sensor-proxy aborted twice with "client_vanished_cb: assertion failed: (ht)" when a client left while a client
+  table was gone, leaving automatic brightness off until reboot: patches/iio-sensor-proxy skips missing tables (the
+  laptop had a one-instruction binary patch), and the drop-in adds Restart=on-failure. sb4edge-fingerprint-import
+  crashed at exit in libusb_unref_device (SIGBUS) during Python teardown, after its work was done: it now leaves with
+  os._exit. make-g9-edid.py raised on EDIDs without the expected timings: it now exits with a message (the real G95NC
+  EDID still produces g9-hdmi-75hz.edid byte for byte).

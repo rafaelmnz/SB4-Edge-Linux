@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds libssc (v0.4.4 + patches/libssc) and iio-sensor-proxy 3.9 (with SSC support; Ubuntu's 3.8 has none) into
+# Builds libssc (v0.4.4 + patches/libssc) and iio-sensor-proxy 3.9 (+ patches/iio-sensor-proxy, with SSC support; Ubuntu's 3.8 has none) into
 # /work/out/ssc/root for remaster.sh (ambient light sensor). Runs inside sb4build (Ubuntu 26.04 arm64):
 #   docker run --rm -v "$PWD":/work sb4build:latest sh /work/build-ssc.sh
 # Sources: research/libssc (https://codeberg.org/DylanVanAssche/libssc), research/iio-sensor-proxy
@@ -22,7 +22,9 @@ meson compile -C /tmp/b1 >/dev/null
 meson install -C /tmp/b1 --destdir "$D" >/dev/null
 meson install -C /tmp/b1 >/dev/null   # for iio-sensor-proxy to find it
 cd /work/research/iio-sensor-proxy
-git -c safe.directory='*' checkout -q 3.9
+git -c safe.directory='*' checkout -q 3.9 -- . 2>/dev/null || git -c safe.directory='*' checkout -q 3.9
+# client_vanished_cb aborted when a client left while a client table was gone (auto-brightness off until reboot)
+git -c safe.directory='*' apply --check /work/patches/iio-sensor-proxy/*.patch 2>/dev/null && git -c safe.directory='*' apply /work/patches/iio-sensor-proxy/*.patch
 meson setup /tmp/b2 --prefix=/usr --sysconfdir=/etc --libexecdir=libexec --buildtype=release -Dssc-support=enabled -Dgtk-tests=false -Dtests=false -Dgtk_doc=false
 meson compile -C /tmp/b2 >/dev/null
 meson install -C /tmp/b2 --destdir "$D" >/dev/null

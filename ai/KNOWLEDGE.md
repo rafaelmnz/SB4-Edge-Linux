@@ -193,6 +193,8 @@ implemented but not tested on hardware; **[open]** not solved.
 - Userspace: libssc 0.4.4 (patched data-type override) + iio-sensor-proxy 3.9 (first with SSC). GNOME auto
   brightness works. Keyboard rule (Samsung's): light off above 100 lux, on below 50 lux, 3 s debounce.
   gsd-power bug: after an iio-sensor-proxy restart it never re-claims the sensor until re-login.
+  iio-sensor-proxy patched (patches/iio-sensor-proxy): client_vanished_cb no longer aborts on a missing client table
+  (crashed twice on the installed laptop); the drop-in restarts it on failure (gsd still needs a re-login after that).
 - Stock GNOME auto brightness: gsd sets the light at the last slider change as 2/3 of full scale and scales
   linearly with lux, unbounded (6 -> 25 lux took the screen from 16 % to 93 %). gnome-shell applies
   `target + slider - 50 %`. Patches here (`patches/gnome-settings-daemon`, `patches/gnome-control-center`) add
