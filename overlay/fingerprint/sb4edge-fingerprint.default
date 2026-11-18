@@ -1,0 +1,8 @@
+# sb4edge-fingerprint-import (fingerprints enrolled in Windows Hello, used for Linux login too).
+#
+# no (default): a Windows Hello print is given to a Linux user only after that user touches the sensor with it:
+#   sudo sb4edge-fingerprint-import        (once per finger, after enrolling it in Windows Hello)
+# yes: every new Windows Hello print goes to the only Linux user at boot and at login, without a touch. Only for a
+#   laptop where nobody else has a Windows Hello fingerprint: anyone's Windows Hello finger would then unlock this
+#   Linux account, sudo included. Has no effect with more than one Linux user.
+AUTO_IMPORT=no

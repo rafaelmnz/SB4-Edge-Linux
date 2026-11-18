@@ -1,6 +1,6 @@
 [Unit]
-Description=Use fingerprints enrolled in Windows Hello for Linux login
-# Before the login screen, so a finger enrolled in Windows works at the first login after it.
+Description=Report (or with AUTO_IMPORT=yes, import) fingerprints enrolled in Windows Hello
+# Before the login screen, so with AUTO_IMPORT=yes a finger enrolled in Windows works at the first login after it.
 Before=display-manager.service
 After=systemd-udev-settle.service dbus.service
 

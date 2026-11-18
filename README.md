@@ -69,8 +69,9 @@ Known issues: switching a USB-C port from DisplayPort back to USB 3 can fail unt
   adds SDCP to its egismoc driver; this sensor's model certificate arrives with one byte zeroed ("Microsoft
   Cor\\x00oration"), so the patch here finds its CA by key identifier and accepts it only when Microsoft's signature
   verifies on the restored bytes. Fingerprint is enabled for sudo and login (password still works).
-  Prints live on the chip and are shared with Windows: fingers enrolled in Windows Hello are picked up for Linux
-  login at every boot and login (`overlay/fingerprint/sb4edge-fingerprint-import`, single-user systems); enrolling
+  Prints live on the chip and are shared with Windows: a finger enrolled in Windows Hello is given to a Linux user
+  after that user touches the sensor with it (`overlay/fingerprint/sb4edge-fingerprint-import`; touch-free import
+  with `AUTO_IMPORT=yes` in `/etc/default/sb4edge-fingerprint`, single-user systems); enrolling
   the same finger in both makes each system delete the other's copy (see [INSTALL.md](INSTALL.md)).
 
 ## Hardware acceleration

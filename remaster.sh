@@ -450,9 +450,11 @@ DEBIAN_FRONTEND=noninteractive pam-auth-update --enable fprintd
 grep -q pam_fprintd.so /etc/pam.d/common-auth
 ! dpkg-query -W -f="\${Status}" resources 2>/dev/null | grep -q "ok installed" || dpkg-query -W -f="\${Version}" resources | grep -q sb4edge'
 # The sensor's prints live on the chip and are shared with Windows; enrolling the same finger on both sides makes
-# each delete the other's. sb4edge-fingerprint-import gives the Linux user the fingers enrolled in Windows Hello:
-# at boot (before the login screen) and at every login (pam_exec, in the background), when there is one user.
+# each delete the other's. sb4edge-fingerprint-import gives a Linux user a finger enrolled in Windows Hello once that
+# user touches the sensor with it ("sudo sb4edge-fingerprint-import"); the boot service and pam_exec only report new
+# prints. AUTO_IMPORT=yes in /etc/default/sb4edge-fingerprint brings back the touch-free import (single-user only).
 install -Dm755 /work/overlay/fingerprint/sb4edge-fingerprint-import $M/usr/sbin/sb4edge-fingerprint-import
+install -Dm644 /work/overlay/fingerprint/sb4edge-fingerprint.default $M/etc/default/sb4edge-fingerprint
 install -Dm644 /work/overlay/fingerprint/sb4edge-fingerprint-import.service $M/usr/lib/systemd/system/sb4edge-fingerprint-import.service
 ln -sf /usr/lib/systemd/system/sb4edge-fingerprint-import.service $M/etc/systemd/system/multi-user.target.wants/sb4edge-fingerprint-import.service
 install -Dm644 /work/overlay/fingerprint/sb4edge-fingerprint.pam-config $M/usr/share/pam-configs/sb4edge-fingerprint

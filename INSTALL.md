@@ -118,17 +118,18 @@ off).
 - **Fingerprint**: the sensor stores fingerprints on the chip itself, shared by Windows and Linux. A finger enrolled
   in Ubuntu does **not** work in Windows (Windows Hello keeps its own list), but a finger enrolled in Windows can
   work in Ubuntu too. So **enroll your fingers in Windows Hello** (Windows Settings → Accounts → Sign-in options →
-  Fingerprint recognition). Ubuntu picks up new Windows fingers by itself at every start-up (before the login
-  screen) and at every login, so the next time you are at the Ubuntu login, the same finger unlocks it, the lock
-  screen and `sudo` (the password always works too). Rest the finger on the power button, do not press it.
+  Fingerprint recognition). Then, in Ubuntu, run `sudo sb4edge-fingerprint-import` and touch the sensor with that
+  finger: from then on it unlocks the login screen, the lock screen and `sudo` (the password always works too). Rest
+  the finger on the power button, do not press it. Repeat once per finger.
   - **Do not enroll the same finger in Ubuntu's Settings** as well: each system then deletes the other's copy.
     Fingers you only use in Ubuntu can be enrolled in Settings → System → Users → *Fingerprint Login*.
-  - The automatic pick-up only runs while Ubuntu has a single user account (so a finger someone enrolled in their
-    own Windows account cannot unlock yours). With several accounts, import by hand after enrolling one finger in
-    Windows: `sudo sb4edge-fingerprint-import <user> right-index` (`--list` shows what is on the sensor).
-  - Windows Hello numbers prints (1, 2, 3) without saying which finger, so the automatic pick-up labels them in
-    order: right index, left index, right middle, and so on. If the label is wrong, fix it (only the label
-    changes): `sudo sb4edge-fingerprint-import --rename right-index left-index`.
+  - The touch is what ties a Windows Hello print to you: Windows Hello prints carry no owner, so without it a finger
+    someone enrolled in their own Windows account could unlock your Ubuntu account. Give a finger name if you like:
+    `sudo sb4edge-fingerprint-import <user> right-index` (`--list` shows what is on the sensor).
+  - If you are the only person with Windows Hello fingers on this laptop, `AUTO_IMPORT=yes` in
+    `/etc/default/sb4edge-fingerprint` imports new Windows fingers by themselves at every start-up and login (only
+    while Ubuntu has a single user account). They are labelled in order: right index, left index, right middle, and
+    so on; fix a wrong label (only the label changes): `sudo sb4edge-fingerprint-import --rename right-index left-index`.
 - **Windows files**: the Windows partition shows up in Files. If it is locked, click it and type the BitLocker
   recovery key once.
 - **Updates**: use Software Updater / `sudo apt upgrade` as usual. A few packages (kernel, libcamera, libfprint,

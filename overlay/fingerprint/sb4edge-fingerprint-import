@@ -4,20 +4,24 @@
 The EgisTec sensor keeps prints on the chip, shared by Windows and Linux. A print enrolled in Linux is unknown to
 Windows (Windows Hello keeps its own database), and enrolling the same finger in Linux makes fprintd delete the
 Windows print (its duplicate check removes on-chip prints it does not know). So: enroll in Windows Hello, and this
-records the chip prints not yet known to fprintd as fingers of a Linux user. Nothing is written to the sensor.
+records chip prints not yet known to fprintd as fingers of a Linux user. Nothing is written to the sensor.
 
-  sudo sb4edge-fingerprint-import [user] [finger]   one new print -> that finger (default: you, right-index)
+Windows Hello prints carry no owner on the chip, so a print is only given to a Linux user after that user touches the
+sensor with that finger (the sensor identifies which of the new prints it is):
+
+  sudo sb4edge-fingerprint-import [user] [finger]   touch the sensor: your new Windows Hello print -> that finger
+                                                    (default: you, the next free finger from right-index on)
   sudo sb4edge-fingerprint-import --list            prints on the sensor, and which Linux finger each one is
   sudo sb4edge-fingerprint-import --rename FROM TO [user]
                                                     relabel a print, e.g. right-index left-index (Windows Hello
-                                                    numbers its prints 1, 2, 3 and never says which finger, so
-                                                    --auto can only guess). Nothing is written to the sensor.
-  sb4edge-fingerprint-import --auto                 every new print -> the only regular user, next free finger
-                                                    (sb4edge-fingerprint-import.service at boot, and at login)
+                                                    numbers its prints 1, 2, 3 and never says which finger).
+  sb4edge-fingerprint-import --auto                 at boot (sb4edge-fingerprint-import.service): reports new prints;
+                                                    imports them without a touch only with AUTO_IMPORT=yes
   sb4edge-fingerprint-import --pam                  --auto in the background, for pam_exec (does not delay login)
 
---auto does nothing when there is more than one regular user: a finger someone enrolled in their own Windows
-account must not unlock another person's Linux account. Use the manual form then.
+AUTO_IMPORT=yes in /etc/default/sb4edge-fingerprint brings back the touch-free import (every new print -> the only
+regular user). Only for a laptop where nobody else has a Windows Hello fingerprint: a finger someone enrolled in
+their own Windows account would unlock this Linux account, sudo included.
 """
 import glob, os, pwd, subprocess, sys, time
 import gi
@@ -28,6 +32,38 @@ FINGERS = {FPrint.Finger(i).value_nick: FPrint.Finger(i) for i in range(1, 11)}
 AUTO_ORDER = ['right-index', 'left-index', 'right-middle', 'left-middle', 'right-thumb', 'left-thumb',
               'right-ring', 'left-ring', 'right-little', 'left-little']
 STORE = '/var/lib/fprint'
+CONFIG = '/etc/default/sb4edge-fingerprint'
+TOUCH_TIMEOUT = 30
+
+
+def auto_import_enabled():
+    try:
+        for line in open(CONFIG):
+            k, _, v = line.strip().partition('=')
+            if k.strip() == 'AUTO_IMPORT':
+                return v.strip().strip('"\'').lower() in ('yes', 'true', '1')
+    except OSError:
+        pass
+    return False
+
+
+def identify(dev, prints):
+    """Wait for a finger and return which of prints it is (None: another finger, or no touch in time)."""
+    import threading
+    from gi.repository import Gio
+    cancel = Gio.Cancellable()
+    timer = threading.Timer(TOUCH_TIMEOUT, cancel.cancel)
+    timer.start()
+    try:
+        res = dev.identify_sync(prints, cancel, None, None)
+    except Exception as e:
+        if cancel.is_cancelled():
+            sys.exit(f'no finger within {TOUCH_TIMEOUT} s: nothing imported')
+        sys.exit(f'the sensor could not read the finger ({e}): nothing imported')
+    finally:
+        timer.cancel()
+    match = res[0] if isinstance(res, tuple) else res
+    return next((p for p in prints if match is not None and p.equal(match)), None)
 
 
 def log(msg):
@@ -146,9 +182,9 @@ def main():
         user, nick = users[0], None
     elif mode == 'manual':
         user = (args[0] if args else os.environ.get('SUDO_USER')) or sys.exit('no user given')
-        nick = (args[1] if len(args) > 1 else 'right-index').removesuffix('-finger')
+        nick = args[1].removesuffix('-finger') if len(args) > 1 else None
         pwd.getpwnam(user)
-        if nick not in FINGERS:
+        if nick is not None and nick not in FINGERS:
             sys.exit('finger must be one of: ' + ' '.join(FINGERS))
 
     ctx, dev = open_device()
@@ -165,15 +201,28 @@ def main():
                 who = [f'{u} {FPrint.Finger(n).value_nick}' for u, n, sp in stored if p.equal(sp)]
                 log(f'  print {i}: ' + (', '.join(who) if who else 'not used by Linux'))
             return
-        if not new:
-            return
-        if mode == 'manual':
-            if len(new) != 1:
-                sys.exit('more than one new print: enroll one finger in Windows Hello at a time and import it')
-            save(dev, new[0], user, nick)
-            return
         used = {n for u, n, _ in stored if u == user}
         free = [f for f in AUTO_ORDER if int(FINGERS[f]) not in used]
+        if mode == 'manual':
+            if not new:
+                sys.exit('no Windows Hello print that Linux does not use yet: enroll the finger in Windows Hello first')
+            if nick is None:
+                nick = free[0] if free else sys.exit(f'{user} has no free finger left: give one, e.g. right-index')
+            elif int(FINGERS[nick]) in used:
+                sys.exit(f'{user} already has a {nick} print: pick another finger, or rename/delete that one first')
+            log(f'Touch the sensor with the finger you enrolled in Windows Hello (rest it, do not press), '
+                f'within {TOUCH_TIMEOUT} s...')
+            p = identify(dev, new)
+            if p is None:
+                sys.exit('that finger is not one of the new Windows Hello prints: nothing imported')
+            save(dev, p, user, nick)
+            return
+        if not new:
+            return
+        if not auto_import_enabled():
+            log(f'{len(new)} Windows Hello print(s) not used by Linux yet; to use yours, run '
+                f'"sudo sb4edge-fingerprint-import" and touch the sensor (or set AUTO_IMPORT=yes in {CONFIG})')
+            return
         for p, f in zip(new, free):
             save(dev, p, user, f)
         if len(new) > len(free):

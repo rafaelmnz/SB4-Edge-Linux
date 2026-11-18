@@ -219,8 +219,10 @@ implemented but not tested on hardware; **[open]** not solved.
   it does not know, so enrolling the same finger in Linux deletes the Windows Hello copy; Windows then drops the
   Linux one. A Linux-enrolled print is not usable by Windows (Windows Hello keeps its own database). Solution here:
   enroll in Windows Hello; `sb4edge-fingerprint-import` records the unknown chip prints (SDCP enrollment IDs) as
-  fprintd prints of the Linux user (boot service + pam_exec at login; single-user systems only) [verified: unlock in
-  Linux, Windows Hello still works, both ways after reboots].
+  fprintd prints of the Linux user [verified: unlock in Linux, Windows Hello still works, both ways after reboots].
+  Windows Hello prints carry no owner on the chip, so a print is assigned only after the user touches the sensor
+  with it (identify against the new prints); the boot service and pam_exec just report new prints. Touch-free import
+  (old behavior, single-user only) with AUTO_IMPORT=yes in /etc/default/sb4edge-fingerprint.
 - Rest the finger; pressing is a power-button press.
 - Windows Hello names prints 1, 2, 3, not by finger, so imported prints get a guessed finger. Relabel with
   `sb4edge-fingerprint-import --rename FROM TO USER` or the pencil button per print in Settings -> Users ->
