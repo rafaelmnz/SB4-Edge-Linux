@@ -610,3 +610,12 @@ Windows qcdxkm8380.sys: logging stripped; AUX diag escape at sub_140115C40 calls
   crashed at exit in libusb_unref_device (SIGBUS) during Python teardown, after its work was done: it now leaves with
   os._exit. make-g9-edid.py raised on EDIDs without the expected timings: it now exits with a message (the real G95NC
   EDID still produces g9-hdmi-75hz.edid byte for byte).
+- NPU in Resources (2026-11-18): the Hexagon page showed no usage, and its only graph (temperature, autoscaled) looked
+  like ~100 % load. Added extra/sb4-cdsp-stats: a read-only module that reads the CDSP SysMon record from SMEM
+  (host 5, item 634) and gives load per mille of the clock vote. Idle reads 0; a FastRPC capability query briefly
+  showed 16.8 %. First version returned ENODATA after boot: the load record (header 0x10100001) stays all zeros,
+  timestamp included, until the DSP first runs something; a zero timestamp now reads as idle (0), as in Qualcomm's
+  downstream driver. Resources: hexagon.rs reads the counter ("Compute DSP load" graph + sidebar meter), and the
+  temperature graph is pinned to 0-100 °C after every point (add_unclamped_point() turns autoscaling back on, so
+  setting it once at setup did nothing). Verified in an Xvfb render: sidebar "0 % · 39 °C", 40 °C at 40 % of the
+  graph. No userspace can run work on the NPU yet (no libcdsprpc / QNN HTP; onnxruntime has no QNN provider).

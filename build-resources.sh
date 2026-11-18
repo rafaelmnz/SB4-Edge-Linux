@@ -17,7 +17,8 @@ for p in /work/patches/resources/*.patch; do
 done
 QUILT_PATCHES=debian/patches quilt push -a -q >/dev/null
 test -f src/devices/gpu/msm.rs
-DEBFULLNAME=sb4edge DEBEMAIL=sb4edge@localhost dch -l +sb4edge "GPU page for Qualcomm Adreno (msm) GPUs."
+test -f src/devices/npu/hexagon.rs
+DEBFULLNAME=sb4edge DEBEMAIL=sb4edge@localhost dch -l +sb4edge "Snapdragon X Elite monitoring for the Oryon CPU, Adreno GPU and Hexagon NPU."
 DEB_BUILD_OPTIONS="nocheck nodoc parallel=$(nproc)" dpkg-buildpackage -b -uc -us >/tmp/rs.log 2>&1 || { grep -E "^error|^warning: unused" -A6 /tmp/rs.log | head -60; tail -30 /tmp/rs.log; exit 1; }
 mkdir -p /work/out/resources; rm -f /work/out/resources/*.deb
 cp ../resources_*.deb /work/out/resources/

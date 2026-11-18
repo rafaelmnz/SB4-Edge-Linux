@@ -1,0 +1,583 @@
+Description: Monitor Snapdragon X Elite CPU sensors and the platform Hexagon NPU
+ Target Ubuntu Resources 51 with the msm-gpu patch applied first.
+Forwarded: no
+
+diff --git a/src/devices/cpu.rs b/src/devices/cpu.rs
+index 88aab20..6f65f94 100644
+--- a/src/devices/cpu.rs
++++ b/src/devices/cpu.rs
+@@ -255,7 +255,24 @@ impl CpuInfo {
+                 .stdout,
+         )
+         .context("unable to parse lscpu output to UTF-8")
+-        .map(Self::parse_lscpu)
++        .map(|output| {
++            let mut info = Self::parse_lscpu(output);
++            if *super::snapdragon::X_ELITE {
++                info.model_name = Some("Qualcomm Snapdragon X Elite (Oryon)".into());
++                if info.physical_cpus.is_none() {
++                    let cores: std::collections::HashSet<String> =
++                        glob("/sys/devices/system/cpu/cpu[0-9]*/topology/core_cpus_list")
++                            .unwrap()
++                            .flatten()
++                            .filter_map(|p| read_parsed(p).ok())
++                            .collect();
++                    if !cores.is_empty() {
++                        info.physical_cpus = Some(cores.len());
++                    }
++                }
++            }
++            info
++        })
+     }
+ }
+ 
+@@ -343,6 +360,13 @@ pub fn get_cpu_usage() -> Vec<Result<(u64, u64)>> {
+ ///
+ /// Will return `Err` if there was no way to read the CPU temperature.
+ pub fn get_temperature() -> Result<f32> {
++    if *super::snapdragon::X_ELITE {
++        static INPUTS: LazyLock<Vec<PathBuf>> =
++            LazyLock::new(|| super::snapdragon::thermal_inputs("cpu"));
++        if let Ok(temp) = super::snapdragon::hottest(&INPUTS) {
++            return Ok(temp as f32);
++        }
++    }
+     if let Some(path) = CPU_TEMPERATURE_PATH.as_ref() {
+         read_sysfs_thermal(path)
+     } else {
+diff --git a/src/devices/mod.rs b/src/devices/mod.rs
+index 66f7a33..393845e 100644
+--- a/src/devices/mod.rs
++++ b/src/devices/mod.rs
+@@ -9,3 +9,4 @@ pub mod network;
+ pub mod npu;
+ pub mod pci;
+ pub mod process;
++mod snapdragon;
+diff --git a/src/devices/npu/amd.rs b/src/devices/npu/amd.rs
+index aef12b0..dd8970e 100644
+--- a/src/devices/npu/amd.rs
++++ b/src/devices/npu/amd.rs
+@@ -264,8 +264,8 @@ impl NpuImpl for AmdNpu {
+         self.device
+     }
+ 
+-    fn pci_slot(&self) -> PciSlot {
+-        self.pci_slot
++    fn pci_slot(&self) -> Option<PciSlot> {
++        Some(self.pci_slot)
+     }
+ 
+     fn driver(&self) -> &str {
+diff --git a/src/devices/npu/hexagon.rs b/src/devices/npu/hexagon.rs
+new file mode 100644
+index 0000000..26631f9
+--- /dev/null
++++ b/src/devices/npu/hexagon.rs
+@@ -0,0 +1,64 @@
++use anyhow::{Result, ensure};
++use process_data::pci_slot::PciSlot;
++use std::path::{Path, PathBuf};
++
++use super::NpuImpl;
++use crate::devices::{pci::Device, snapdragon};
++use crate::utils::read_parsed;
++
++#[derive(Clone, Debug)]
++pub struct Hexagon {
++    remoteproc: PathBuf,
++    sensors: Vec<PathBuf>,
++}
++
++impl Hexagon {
++    pub fn discover() -> Option<Self> {
++        let remoteproc = glob::glob("/sys/class/remoteproc/remoteproc*")
++            .ok()?
++            .flatten()
++            .find(|path| {
++                snapdragon::compatible(&path.join("device/of_node"), b"qcom,x1e80100-cdsp-pas")
++            })?;
++        Some(Self {
++            remoteproc,
++            sensors: snapdragon::thermal_inputs("nsp"),
++        })
++    }
++}
++
++impl NpuImpl for Hexagon {
++    fn device(&self) -> Option<&'static Device> {
++        None
++    }
++    fn pci_slot(&self) -> Option<PciSlot> {
++        None
++    }
++    fn driver(&self) -> &str {
++        "qcom_q6v5_pas"
++    }
++    fn sysfs_path(&self) -> &Path {
++        &self.remoteproc
++    }
++    fn first_hwmon(&self) -> Option<&Path> {
++        None
++    }
++    fn name(&self) -> Result<String> {
++        Ok("Qualcomm Hexagon NPU".into())
++    }
++    fn usage(&self) -> Result<f64> {
++        let load: u32 = read_parsed("/sys/module/sb4_cdsp_stats/parameters/load_permille")?;
++        ensure!(load <= 1000, "invalid CDSP load sample");
++        Ok(f64::from(load) / 1000.0)
++    }
++
++    fn temperature(&self) -> Result<f64> {
++        snapdragon::hottest(&self.sensors)
++    }
++    fn firmware_state(&self) -> Option<String> {
++        read_parsed(self.remoteproc.join("state")).ok()
++    }
++    fn max_tops(&self) -> Result<u64> {
++        Ok(45)
++    }
++}
+diff --git a/src/devices/npu/intel.rs b/src/devices/npu/intel.rs
+index 607dcea..a01e29f 100644
+--- a/src/devices/npu/intel.rs
++++ b/src/devices/npu/intel.rs
+@@ -49,8 +49,8 @@ impl NpuImpl for IntelNpu {
+         self.device
+     }
+ 
+-    fn pci_slot(&self) -> PciSlot {
+-        self.pci_slot
++    fn pci_slot(&self) -> Option<PciSlot> {
++        Some(self.pci_slot)
+     }
+ 
+     fn driver(&self) -> &str {
+diff --git a/src/devices/npu/mod.rs b/src/devices/npu/mod.rs
+index bec794d..2f328ae 100644
+--- a/src/devices/npu/mod.rs
++++ b/src/devices/npu/mod.rs
+@@ -1,4 +1,5 @@
+ mod amd;
++mod hexagon;
+ mod intel;
+ mod other;
+ 
+@@ -28,7 +29,8 @@ pub const VID_INTEL: u16 = 0x8086;
+ 
+ #[derive(Debug)]
+ pub struct NpuData {
+-    pub pci_slot: PciSlot,
++    pub pci_slot: Option<PciSlot>,
++    pub firmware_state: Option<String>,
+ 
+     pub usage_fraction: Option<f64>,
+ 
+@@ -54,7 +56,7 @@ impl NpuData {
+     pub fn new(npu: &Npu) -> Self {
+         let pci_slot = npu.pci_slot();
+ 
+-        trace!("Gathering NPU data for {pci_slot}…");
++        trace!("Gathering NPU data for {pci_slot:?}…");
+ 
+         let usage_fraction = npu.usage().ok();
+ 
+@@ -77,6 +79,7 @@ impl NpuData {
+ 
+         let npu_data = Self {
+             pci_slot,
++            firmware_state: npu.firmware_state(),
+             usage_fraction,
+             total_memory,
+             used_memory,
+@@ -91,7 +94,7 @@ impl NpuData {
+             link,
+         };
+ 
+-        trace!("Gathered NPU data for {pci_slot}: {npu_data:?}");
++        trace!("Gathered NPU data for {pci_slot:?}: {npu_data:?}");
+ 
+         npu_data
+     }
+@@ -102,6 +105,7 @@ pub enum Npu {
+     Amd(AmdNpu),
+     Intel(IntelNpu),
+     Other(OtherNpu),
++    Hexagon(hexagon::Hexagon),
+ }
+ 
+ impl Default for Npu {
+@@ -112,27 +116,46 @@ impl Default for Npu {
+ 
+ pub trait NpuImpl {
+     fn device(&self) -> Option<&'static Device>;
+-    fn pci_slot(&self) -> PciSlot;
++    fn pci_slot(&self) -> Option<PciSlot>;
++    fn firmware_state(&self) -> Option<String> {
++        None
++    }
+     fn driver(&self) -> &str;
+     fn sysfs_path(&self) -> &Path;
+     fn first_hwmon(&self) -> Option<&Path>;
+ 
+     fn name(&self) -> Result<String>;
+-    fn usage(&self) -> Result<f64>;
+-    fn used_memory(&self) -> Result<u64>;
+-    fn total_memory(&self) -> Result<u64>;
++    fn usage(&self) -> Result<f64> {
++        bail!("counter unavailable")
++    }
++    fn used_memory(&self) -> Result<u64> {
++        bail!("counter unavailable")
++    }
++    fn total_memory(&self) -> Result<u64> {
++        bail!("counter unavailable")
++    }
+     fn temperature(&self) -> Result<f64>;
+-    fn power_usage(&self) -> Result<f64>;
+-    fn core_frequency(&self) -> Result<f64>;
+-    fn memory_frequency(&self) -> Result<f64>;
++    fn power_usage(&self) -> Result<f64> {
++        bail!("counter unavailable")
++    }
++    fn core_frequency(&self) -> Result<f64> {
++        bail!("counter unavailable")
++    }
++    fn memory_frequency(&self) -> Result<f64> {
++        bail!("counter unavailable")
++    }
+     fn tops(&self) -> Result<u64> {
+         bail!("not implemented")
+     }
+     fn max_tops(&self) -> Result<u64> {
+         bail!("not implemented")
+     }
+-    fn power_cap(&self) -> Result<f64>;
+-    fn power_cap_max(&self) -> Result<f64>;
++    fn power_cap(&self) -> Result<f64> {
++        bail!("counter unavailable")
++    }
++    fn power_cap_max(&self) -> Result<f64> {
++        bail!("counter unavailable")
++    }
+ 
+     // These are preimplemented ways of getting information through the DRM and hwmon interface.
+     // It's also used as a fallback.
+@@ -198,6 +221,7 @@ impl std::ops::Deref for Npu {
+         match self {
+             Self::Amd(npu) => npu,
+             Self::Intel(npu) => npu,
++            Self::Hexagon(npu) => npu,
+             Self::Other(npu) => npu,
+         }
+     }
+@@ -220,6 +244,11 @@ impl Npu {
+             }
+         }
+ 
++        if let Some(dsp) = hexagon::Hexagon::discover() {
++            info!("Found Qualcomm Hexagon NPU via CDSP remoteproc");
++            npu_vec.push(Self::Hexagon(dsp));
++        }
++
+         debug!("{} NPUs found", npu_vec.len());
+ 
+         Ok(npu_vec)
+@@ -308,7 +337,7 @@ impl Npu {
+         info!(
+             "Found NPU \"{}\" (PCI slot: {} · PCI ID: {vid:x}:{pid:x} · Category: {npu_category})",
+             npu.name().unwrap_or("<unknown name>".into()),
+-            npu.pci_slot(),
++            pci_slot,
+         );
+ 
+         trace!("Created NPU object of {path:?}: {npu:?}");
+@@ -321,6 +350,8 @@ impl Npu {
+     }
+ 
+     pub fn link(&self) -> Result<Link> {
+-        Ok(Link::Pcie(LinkData::from_pci_slot(&self.pci_slot())?))
++        Ok(Link::Pcie(LinkData::from_pci_slot(
++            &self.pci_slot().context("platform device")?,
++        )?))
+     }
+ }
+diff --git a/src/devices/npu/other.rs b/src/devices/npu/other.rs
+index f762a95..fc5a41c 100644
+--- a/src/devices/npu/other.rs
++++ b/src/devices/npu/other.rs
+@@ -40,8 +40,8 @@ impl NpuImpl for OtherNpu {
+         self.device
+     }
+ 
+-    fn pci_slot(&self) -> PciSlot {
+-        self.pci_slot
++    fn pci_slot(&self) -> Option<PciSlot> {
++        Some(self.pci_slot)
+     }
+ 
+     fn driver(&self) -> &str {
+diff --git a/src/devices/snapdragon.rs b/src/devices/snapdragon.rs
+new file mode 100644
+index 0000000..e1c35a3
+--- /dev/null
++++ b/src/devices/snapdragon.rs
+@@ -0,0 +1,33 @@
++use crate::utils::read_parsed;
++use anyhow::{Context, Result};
++use std::{
++    fs,
++    path::{Path, PathBuf},
++    sync::LazyLock,
++};
++
++pub fn compatible(node: &Path, id: &[u8]) -> bool {
++    fs::read(node.join("compatible"))
++        .is_ok_and(|data| data.split(|&byte| byte == 0).any(|entry| entry == id))
++}
++
++pub static X_ELITE: LazyLock<bool> =
++    LazyLock::new(|| compatible(Path::new("/sys/firmware/devicetree/base"), b"qcom,x1e80100"));
++
++pub fn thermal_inputs(prefix: &str) -> Vec<PathBuf> {
++    glob::glob("/sys/class/thermal/thermal_zone*/type")
++        .unwrap()
++        .flatten()
++        .filter(|path| fs::read_to_string(path).is_ok_and(|name| name.starts_with(prefix)))
++        .map(|path| path.with_file_name("temp"))
++        .collect()
++}
++
++pub fn hottest(inputs: &[PathBuf]) -> Result<f64> {
++    inputs
++        .iter()
++        .filter_map(|path| read_parsed::<i64>(path).ok())
++        .max()
++        .map(|temp| temp as f64 / 1000.0)
++        .context("no readable temperature sensor")
++}
+diff --git a/src/ui/mod.rs b/src/ui/mod.rs
+index 0e46b79..7e460ad 100644
+--- a/src/ui/mod.rs
++++ b/src/ui/mod.rs
+@@ -82,6 +82,7 @@ fn set_subtitle_boolean_maybe(boolean: Option<bool>, action_row: &ActionRow) ->
+ }
+ 
+ fn gpu_npu_usage_string(
++    usage_label: String,
+     usage_fraction: Option<f64>,
+     used_memory: Option<u64>,
+     total_memory: Option<u64>,
+@@ -92,7 +93,7 @@ fn gpu_npu_usage_string(
+     if let Some(usage_fraction) = usage_fraction {
+         labels.add_with_icon(
+             "speedometer-symbolic",
+-            i18n("Usage"),
++            usage_label,
+             convert_fraction(usage_fraction, true),
+         );
+     }
+diff --git a/src/ui/pages/gpu.rs b/src/ui/pages/gpu.rs
+index 716c85a..24102a7 100644
+--- a/src/ui/pages/gpu.rs
++++ b/src/ui/pages/gpu.rs
+@@ -257,6 +257,11 @@ impl ResGPU {
+             GpuIdentifier::Enumerator(_) => imp.pci_slot.set_subtitle(&i18n("N/A")),
+         }
+ 
++        if matches!(gpu, Gpu::Msm(_)) {
++            imp.manufacturer.set_subtitle("Qualcomm");
++            imp.pci_slot.set_visible(false);
++            imp.vram_usage.set_title_label(&i18n("Shared GPU Memory"));
++        }
+         imp.driver_used.set_subtitle(gpu.driver());
+ 
+         if gpu.combined_media_engine().unwrap_or_default() {
+@@ -363,6 +368,7 @@ impl ResGPU {
+         self.set_property("usage", usage_fraction.unwrap_or(0.0));
+ 
+         self.set_tab_usage_labels(gpu_npu_usage_string(
++            i18n("Usage"),
+             *usage_fraction,
+             *used_vram,
+             *total_vram,
+diff --git a/src/ui/pages/npu.rs b/src/ui/pages/npu.rs
+index 59358bb..16e5c1c 100644
+--- a/src/ui/pages/npu.rs
++++ b/src/ui/pages/npu.rs
+@@ -197,14 +197,19 @@ impl ResNPU {
+ 
+     pub fn setup_widgets(&self, npu: &Npu) {
+         trace!(
+-            "Setting up ResNPU ({}, {}) widgets…",
++            "Setting up ResNPU ({}, {:?}) widgets…",
+             self.tab_detail_string(),
+             npu.pci_slot()
+         );
+ 
+         let imp = self.imp();
+ 
+-        let tab_id = format!("{}-{}", TAB_ID_PREFIX, npu.pci_slot().to_string());
++        let tab_id = format!(
++            "{}-{}",
++            TAB_ID_PREFIX,
++            npu.pci_slot()
++                .map_or_else(|| "hexagon".into(), |slot| slot.to_string())
++        );
+         imp.set_tab_id(&tab_id);
+ 
+         imp.npu_usage.set_title_label(&i18n("Total Usage"));
+@@ -226,7 +231,23 @@ impl ResNPU {
+                 .map_or_else(|_| i18n("N/A"), |vendor| vendor.name().to_string()),
+         );
+ 
+-        imp.pci_slot.set_subtitle(&npu.pci_slot().to_string());
++        if let Some(slot) = npu.pci_slot() {
++            imp.pci_slot.set_subtitle(&slot.to_string());
++        } else {
++            imp.manufacturer.set_subtitle("Qualcomm");
++            imp.pci_slot.set_title(&i18n("Firmware state"));
++            imp.tops.set_title(&i18n("Peak throughput"));
++            imp.npu_usage.set_title_label(&i18n("Compute DSP load"));
++            imp.npu_usage.set_tooltip_text(Some(&i18n(
++                "Average Hexagon Q6 cycles used relative to its clock rate",
++            )));
++            imp.memory_usage.set_visible(false);
++            imp.power_usage.set_visible(false);
++            imp.npu_clockspeed.set_visible(false);
++            imp.memory_clockspeed.set_visible(false);
++            imp.max_power_cap.set_visible(false);
++            imp.link.set_visible(false);
++        }
+ 
+         imp.driver_used.set_subtitle(npu.driver());
+ 
+@@ -237,7 +258,7 @@ impl ResNPU {
+ 
+     pub fn refresh_page(&self, npu_data: &NpuData) {
+         trace!(
+-            "Refreshing ResNPU ({}, {})…",
++            "Refreshing ResNPU ({}, {:?})…",
+             self.tab_detail_string(),
+             npu_data.pci_slot
+         );
+@@ -245,7 +266,8 @@ impl ResNPU {
+         let imp = self.imp();
+ 
+         let NpuData {
+-            pci_slot: _,
++            pci_slot,
++            firmware_state,
+             usage_fraction,
+             total_memory,
+             used_memory,
+@@ -260,12 +282,21 @@ impl ResNPU {
+             link,
+         } = npu_data;
+ 
++        if pci_slot.is_none() {
++            imp.pci_slot
++                .set_subtitle(firmware_state.as_deref().unwrap_or(&i18n("N/A")));
++        }
+         imp.npu_usage.add_fraction_point(*usage_fraction);
+ 
+         imp.memory_usage
+             .add_storage_point(*used_memory, *total_memory);
+ 
+         imp.temperature.add_temperature_point(*temperature);
++        if pci_slot.is_none() {
++            // add_temperature_point() re-enables autoscaling, which makes a steady temperature fill the
++            // graph and read as full load, so pin the Hexagon graph to a fixed 0-100 °C scale.
++            imp.temperature.graph().set_locked_max_y(Some(100.0));
++        }
+ 
+         let mut power_string = power_usage.map_or_else(|| i18n("N/A"), convert_power);
+ 
+@@ -283,21 +314,32 @@ impl ResNPU {
+                 convert_tops(*curr_tops as f64),
+                 convert_tops(*max_tops as f64)
+             ));
++        } else if pci_slot.is_none()
++            && let Some(maximum) = max_tops
++        {
++            imp.tops.set_subtitle(&convert_tops(*maximum as f64));
+         } else {
+             imp.tops.set_subtitle(&i18n("N/A"));
+         }
+ 
+-        set_subtitle_converted_maybe(*vram_speed, convert_frequency, &imp.npu_clockspeed);
++        set_subtitle_converted_maybe(*vram_speed, convert_frequency, &imp.memory_clockspeed);
+ 
+         set_subtitle_converted_maybe(*power_cap_max, convert_power, &imp.max_power_cap);
+ 
+-        self.set_property("usage", usage_fraction.unwrap_or(0.0));
+-
+-        imp.temperature.add_temperature_point(*temperature);
++        if let Some(usage) = usage_fraction {
++            self.set_property("usage", usage);
++        } else if pci_slot.is_some() {
++            self.set_property("usage", 0.0);
++        }
+ 
+         set_subtitle_converted_maybe(link.as_ref(), Link::to_string, &imp.link);
+ 
+         self.set_tab_usage_labels(gpu_npu_usage_string(
++            if pci_slot.is_none() {
++                i18n("Compute DSP load")
++            } else {
++                i18n("Usage")
++            },
+             *usage_fraction,
+             *used_memory,
+             *total_memory,
+diff --git a/src/ui/window.rs b/src/ui/window.rs
+index c3f9c95..06a2188 100644
+--- a/src/ui/window.rs
++++ b/src/ui/window.rs
+@@ -104,7 +104,7 @@ mod imp {
+ 
+         pub gpu_pages: RefCell<HashMap<GpuIdentifier, (Gpu, adw::ToolbarView)>>,
+ 
+-        pub npu_pages: RefCell<HashMap<PciSlot, (Npu, adw::ToolbarView)>>,
++        pub npu_pages: RefCell<HashMap<Option<PciSlot>, (Npu, adw::ToolbarView)>>,
+ 
+         pub apps_context: RefCell<AppsContext>,
+ 
+@@ -595,11 +595,14 @@ impl MainWindow {
+         };
+ 
+         for npu_data_entry in &mut npu_data {
++            let Some(slot) = npu_data_entry.pci_slot else {
++                continue;
++            };
+             if npu_data_entry.used_memory.is_none() && npu_data_entry.total_memory.is_some() {
+                 npu_data_entry.used_memory = Some(
+                     process_data
+                         .iter()
+-                        .filter_map(|p| p.npu_usage_stats.get(&npu_data_entry.pci_slot))
++                        .filter_map(|p| p.npu_usage_stats.get(&slot))
+                         .filter_map(process_data::npu_usage::NpuUsageStats::mem)
+                         .sum(),
+                 );
+@@ -725,13 +728,17 @@ impl MainWindow {
+         for ((_, page), mut npu_data) in npu_pages.values().zip(npu_data) {
+             let page = page.content().and_downcast::<ResNPU>().unwrap();
+ 
+-            let processes_npu_fraction = apps_context.npu_fraction(npu_data.pci_slot);
++            let Some(slot) = npu_data.pci_slot else {
++                page.refresh_page(&npu_data);
++                continue;
++            };
++            let processes_npu_fraction = apps_context.npu_fraction(slot);
+             if let Some(usage) = npu_data.usage_fraction {
+                 npu_data.usage_fraction = Some(f64::max(usage, processes_npu_fraction.into()));
+             }
+ 
+             if npu_data.total_memory.is_some() {
+-                let processes_npu_memory_fraction = apps_context.npu_mem(npu_data.pci_slot);
++                let processes_npu_memory_fraction = apps_context.npu_mem(slot);
+                 npu_data.used_memory = Some(u64::max(
+                     npu_data.used_memory.unwrap_or(0),
+                     processes_npu_memory_fraction,

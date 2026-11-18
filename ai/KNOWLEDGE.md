@@ -251,6 +251,24 @@ implemented but not tested on hardware; **[open]** not solved.
   12-byte entry in the clear-key VMK); patched to skip unknown VMK entries (`patches/cryptsetup`).
 - Mount NTFS with ntfs-3g only: ntfs3 mounts a hibernated (Fast Startup) volume read-write.
 
+## NPU (Hexagon compute DSP)
+
+- The 45 TOPS NPU is the Hexagon **CDSP** (`remoteproc` with `qcom,x1e80100-cdsp-pas`, firmware `qccdsp8380.mbn`),
+  reached through FastRPC (`/dev/fastrpc-cdsp`). There is no DRM accel device (`/dev/accel*`) on X1E; that is
+  expected, not a missing driver. Running work on it needs Qualcomm's userspace (libcdsprpc, `fastrpc_shell_3`,
+  QNN HTP libraries) or an onnxruntime build with the QNN provider; none of these are in Ubuntu.
+- Load: the DSP firmware keeps SysMon statistics in SMEM (host 5, item 634): records with a header
+  `feature << 28 | length << 16`. Feature 1 = Q6 load (thousands of cycles/s + a 64-bit arch-timer timestamp),
+  feature 2 = event stats (first word: Q6 clock vote in kHz), feature 3 = power stats. Load / clock vote = compute
+  DSP load. Reading it never wakes the DSP. `extra/sb4-cdsp-stats` exposes it as
+  `/sys/module/sb4_cdsp_stats/parameters/load_permille` (layout from Qualcomm's downstream
+  `sysmon_subsystem_stats.c`). The timestamp stays 0 until the DSP first runs something after boot: report that as
+  idle (0), like the downstream driver, not as missing data [verified: one FastRPC capability query fills it].
+  This is Q6 core load, not HTP tensor-engine utilisation, which the firmware does not report.
+- Resources (`patches/resources/snapdragon-monitoring.patch`) shows the load, firmware state and the hottest `nsp*`
+  thermal zone. Its graphs autoscale; a steady temperature then fills the graph and reads as full load, so the
+  Hexagon temperature graph is pinned to 0-100 °C.
+
 ## Open problems (good places to contribute)
 
 1. USB-C DP -> USB3 reconfigure timeout (qmp-combo clk imbalance); DP alt mode EDID read behind adapters.
@@ -262,6 +280,7 @@ implemented but not tested on hardware; **[open]** not solved.
 6. Browser hardware video decoding (Firefox V4L2-M2M, Chromium).
 7. GNOME: upstream the automatic brightness modes; gsd re-claiming the light sensor after iio-sensor-proxy restarts.
 8. 14" and 15.6" models: most of this applies; DT differences (USB-A port uses eusb6 on the 16").
+9. NPU userspace: an open way to run models on the Hexagon NPU (FastRPC + QNN HTP, or an onnxruntime QNN build).
 
 ## Sources and prior work
 

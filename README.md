@@ -64,7 +64,7 @@ Known issues: switching a USB-C port from DisplayPort back to USB 3 can fail unt
   Fingerprint can relabel which finger a print is. An apt hook rebuilds both packages with the patches when Ubuntu
   updates them.
 - Rebuilt Ubuntu packages: cryptsetup (BitLocker volumes from recent Windows 11), libcamera (OV02C10), Resources
-  (Adreno GPU page), libfprint with SDCP (`extra/libfprint`, fingerprint reader).
+  (Oryon CPU temperature and core count, Adreno GPU monitoring, Hexagon NPU compute DSP load, firmware state and temperature), libfprint with SDCP (`extra/libfprint`, fingerprint reader).
 - **Fingerprint** (`extra/libfprint`): the EgisTec sensor only keeps enrolled prints over SDCP. libfprint MR !547
   adds SDCP to its egismoc driver; this sensor's model certificate arrives with one byte zeroed ("Microsoft
   Cor\\x00oration"), so the patch here finds its CA by key identifier and accepts it only when Microsoft's signature

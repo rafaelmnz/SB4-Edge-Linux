@@ -172,6 +172,7 @@ install -Dm644 /work/out/samsung_galaxybook_kbd.ko "$B/usr/lib/modules/$KVER/upd
 # USB-C SuperSpeed (patches/sb4edge-local/0008): PS8830 retimers in the DT, gb4e_typec lets the usbc helper set
 # orientation/mode. Hubs kept awake (usbcore is built in): udev rule + cmdline for the installed system.
 install -Dm644 /work/out/gb4e_typec.ko "$B/usr/lib/modules/$KVER/updates/gb4e_typec.ko"
+install -Dm644 /work/out/sb4_cdsp_stats.ko "$B/usr/lib/modules/$KVER/updates/sb4_cdsp_stats.ko"
 install -Dm644 /work/overlay/sb4edge-modules.conf "$B/etc/modules-load.d/sb4edge.conf"
 install -Dm644 /work/overlay/63-sb4edge-usb-hub-pm.rules "$B/usr/lib/udev/rules.d/63-sb4edge-usb-hub-pm.rules"
 install -Dm644 /work/overlay/sb4edge-grub.cfg "$B/etc/default/grub.d/60-sb4edge.cfg"
