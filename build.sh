@@ -6,6 +6,20 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 UBUNTU_ISO=https://cdimage.ubuntu.com/releases/26.10/release/ubuntu-26.10-desktop-arm64.iso
+UBUNTU_ISO_SHA256=9242a38c47eb53a5beb153c249d4843e4366f8955e9b972663e4ab7989311e9f   # Ubuntu's SHA256SUMS for 26.10
+# The base ISO is downloaded to a temporary name and only kept when its checksum matches; a cached copy is checked too.
+base_iso() {
+	local f=iso/ubuntu-26.10-desktop-arm64.iso
+	if [ -f "$f" ] && [ "$(shasum -a 256 "$f" | cut -d' ' -f1)" != "$UBUNTU_ISO_SHA256" ]; then
+		echo "$f does not match Ubuntu's checksum (interrupted download?): downloading it again" >&2
+		rm -f "$f"
+	fi
+	[ -f "$f" ] && return 0
+	curl -fL -o "$f.part" "$UBUNTU_ISO"
+	[ "$(shasum -a 256 "$f.part" | cut -d' ' -f1)" = "$UBUNTU_ISO_SHA256" ] ||
+		{ echo "downloaded ISO does not match Ubuntu's checksum" >&2; rm -f "$f.part"; return 1; }
+	mv "$f.part" "$f"
+}
 mkdir -p out logs iso
 run() { docker run --rm -v "$PWD":/work sb4build:latest "$@"; }
 # Kernel and modules: Ubuntu 26.04 container (docker/kernel); the kernel tree's sign-file links libcrypto.so.3.
@@ -32,7 +46,7 @@ for s in $steps; do
 	libfprint)  step "libfprint with SDCP (fingerprint reader)"; run bash /work/extra/libfprint/build.sh ;;
 	gnome)      step "GNOME Settings + settings daemon (fingerprint rename, brightness modes)"; run bash /work/build-gnome.sh ;;
 	iso)        step "remaster the Ubuntu ISO"
-	            [ -f iso/ubuntu-26.10-desktop-arm64.iso ] || curl -fL -o iso/ubuntu-26.10-desktop-arm64.iso "$UBUNTU_ISO"
+	            base_iso
 	            docker volume create sb4-iso >/dev/null
 	            docker run --rm --privileged -v sb4-iso:/iso -v "$PWD":/work sb4build:latest bash /work/remaster.sh 2>&1 | tee logs/remaster.log ;;
 	*) echo "unknown step: $s" >&2; exit 2 ;;

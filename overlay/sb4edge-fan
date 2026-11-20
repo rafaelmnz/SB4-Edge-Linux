@@ -30,14 +30,18 @@ for i in {1..30}; do
 done
 [ -n "$target" ] || { echo "samsung_galaxybook_ec hwmon not found (samsung_galaxybook_kbd not loaded?)" >&2; exit 1; }
 
+# Hottest CPU zone in °C, or nothing when no CPU zone gave a valid reading (the caller then runs the fan at the
+# profile's top step instead of reading that as 0 °C, which would switch the fan off).
 cpu_temp() {
-  local z t max=0
+  local z t max= ty
   for z in /sys/class/thermal/thermal_zone*; do
-    [[ $(<"$z/type") == cpu* ]] || continue
-    t=$(<"$z/temp") || continue
-    ((t > max)) && max=$t
+    ty=$(<"$z/type") 2>/dev/null || continue
+    [[ $ty == cpu* ]] || continue
+    t=$(<"$z/temp") 2>/dev/null || continue
+    [[ $t =~ ^-?[0-9]+$ ]] || continue
+    [ -z "$max" ] || ((t > max)) && max=$t
   done
-  echo $((max / 1000))
+  [ -n "$max" ] && echo $((max / 1000))
 }
 
 profile() {
@@ -68,7 +72,7 @@ set_cpu_cap() {
 restore() { echo 0 > "$target"; set_cpu_cap balanced; exit 0; }
 trap restore TERM INT
 
-mode= step=0 last=-1 since=0
+mode= step=0 last=-1 since=0 nodata=0
 while :; do
   p=$(profile)
   if [ "$p" != "$mode" ]; then
@@ -80,8 +84,16 @@ while :; do
   fi
   t=$(cpu_temp)
   ((step > ${#TRIPS[@]})) && step=${#TRIPS[@]}
-  while ((step < ${#TRIPS[@]} && t >= TRIPS[step])); do ((step++)); done
-  while ((step > 0 && t < TRIPS[step - 1] - HYST)); do ((step--)); done
+  if [ -z "$t" ]; then
+    # No CPU temperature: keep cooling (top step) until readings come back.
+    ((nodata)) || echo "no CPU temperature reading: fan at ${RPMS[${#TRIPS[@]}]} rpm until it comes back"
+    nodata=1 step=${#TRIPS[@]} t=?
+  else
+    ((nodata)) && echo "CPU temperature back: $t °C"
+    nodata=0
+    while ((step < ${#TRIPS[@]} && t >= TRIPS[step])); do ((step++)); done
+    while ((step > 0 && t < TRIPS[step - 1] - HYST)); do ((step--)); done
+  fi
   # Write on a change, and every 30 s in case the EC was reset.
   if ((step != last || SECONDS - since >= 30)); then
     ((step != last)) && echo "$t °C: ${RPMS[step]} rpm"

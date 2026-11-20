@@ -647,3 +647,37 @@ Windows qcdxkm8380.sys: logging stripped; AUX diag escape at sub_140115C40 calls
   /lib/modules/$KVER/updates/ (delete it once a kernel built with 0005 is installed, or it shadows that kernel's module).
 - sb4edge-fingerprint-import: the reader can vanish mid-read (suspend/shutdown, "g-usb-device-error-quark: device was
   disconnected"); the GLib error is now reported instead of leaving a crash report.
+- Independent review (2026-11-18, of the 11c84de bundle and 32fd834), checked and fixed:
+  - Wi-Fi: linux-firmware-qualcomm-wireless 20261110 has the 17cb:1107 board-id 255 entry itself, with the same
+    data as our donor copy; ath12k-board2-add.py exited 1 ("entry already present") and stopped remaster.sh. Now it
+    writes nothing and no override is installed; the update script removes the override on installed systems when
+    Ubuntu's entry matches (no ath12k firmware in the initramfs, so no rebuild; effective at the next boot).
+  - Fingerprint import gave every unknown chip print to the only Linux user: prints carry no owner (username,
+    description empty; finger UNKNOWN), so another person's Windows Hello finger would unlock the account. A print
+    is now bound only after a touch identifies it among the new prints (identify_sync; egismoc has IDENTIFY);
+    boot/login only report. AUTO_IMPORT=yes in /etc/default/sb4edge-fingerprint keeps the touch-free import.
+  - libfprint certificate fallback: now restores the byte only when the sequence occurs once, then runs the normal
+    X509_verify_cert on the restored certificate (was: signature by key identifier, then only the CA's chain).
+    Verified on the sensor: "model certificate verified once its zeroed issuer byte was restored".
+  - sb4edge-fan read a missing CPU temperature as 0 °C (fan off). Now: top step until readings return (fixture test:
+    85 °C 6000 rpm, no reading 8000, back at 40 °C 0, garbage 8000).
+  - sb4edge-usbc: the "disk mounted behind the port" guard missed dm/md (LUKS, LVM) and swap; it follows slaves/ and
+    loop backing files and reads /proc/swaps (fake-sysfs test: direct, LUKS, LVM-on-LUKS, none, unreadable).
+  - test/qemu-test.sh always returned 0: now 0 only with graphical.target/GDM and no panic/emergency, 1 otherwise,
+    2 when QEMU did not run to the timeout.
+  - dpkgstatus.py ignored packages whose stanza disappeared below (none in the 27.04 build, but possible): recorded
+    as null and dropped from upper layers that still carry the inherited stanza.
+  - build-ssc.sh could skip a patch silently: builds from git archive of each tag, every patch must apply.
+  - build.sh kept a partial base ISO: downloads to .part, checks Ubuntu's SHA-256, also checks the cached copy.
+  - check-secrets.sh: fixed patterns case-sensitive (user words still any case), expected lines in
+    scripts/check-secrets.allow; returns 0 on a clean tree.
+- VA-API on Iris (2026-11-19): qcom-va-driver 1.1.0 failed every decode ("S_CTRL DISPLAY_DELAY (Iris decode-order
+  patch required): Invalid argument"). Its kernel patches (radxa-pkg/qcom-va-driver patches/, GPL-2.0) are now
+  patches/kernel/0006-0010; all stay inside drivers/media/platform/qcom/iris (module-only change). 0006 (decode order)
+  was rebased: 7.4-rc3 has SLICE_MODE/SLICE_MAX_BYTES/SLICE_MAX_MB after TIME_DELTA_BASED_RC, so the new cap enum
+  entries and the two switch cases go after them; no functional change. Built against the kernel tree (gcc 15.2,
+  signed) with 0005 first; installed on the laptop as /lib/modules/$KVER/updates/qcom-iris.ko and reloaded.
+  Before: 90/90 frames failed. After: 4K H.264/HEVC test clips 90/90 frames, no errors, framemd5 identical to
+  libavcodec; 4K 40 Mbit/s H.264 73 fps, 1.2 CPU-s per 10 s (software 9.2). qcom-va-driver-tests: all pass except
+  vpp-overlay (CDSP VPP disabled at build time); vpp-scaling/tonemap and prime-import need /dev/dma_heap/system
+  (root-only). Citrix: HWAccelerationEnabled=True in ~/.ICAClient/wfclient.ini [Thinwire3.0].

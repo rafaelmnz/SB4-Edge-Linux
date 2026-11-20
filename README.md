@@ -19,6 +19,9 @@ shasum -a 256 -c SHA256SUMS      # Linux: sha256sum -c SHA256SUMS
 (Windows: `copy /b ubuntu-27.04-sb4edge-desktop-arm64.iso.part1 + ...part2 + ...part3 ubuntu-27.04-sb4edge-desktop-arm64.iso`.)
 Or build it yourself with `build.sh` (below).
 
+**Already installed?** Fixes made after a release come as `sb4edge-update.sh` on the same release page: run
+`sudo sh sb4edge-update.sh` once (no reinstall; originals are kept in `/var/lib/sb4edge/update-backup/`).
+
 **Installing next to Windows** (shrink C: in Windows first, BitLocker recovery key, Secure Boot off): see
 [INSTALL.md](INSTALL.md).
 
@@ -27,7 +30,7 @@ Or build it yourself with `build.sh` (below).
 | Part | Status | Notes |
 |---|---|---|
 | Display (2880x1800 OLED, 120 Hz) | works | brightness, VRR; brightness remembered across boots |
-| Ambient light sensor | works | automatic screen brightness (GNOME, with two modes: around the slider or follow room light) and keyboard backlight (off above 100 lux, on below 50 lux, like Windows) |
+| Ambient light sensor | works | automatic screen brightness (GNOME, with two modes: around the slider or follow room light) and keyboard backlight (your level in normal light, one step dimmer below 10 lux, off above 40 lux as on Windows and while the display is off) |
 | Keyboard, touchpad | works | keyboard backlight remembered across boots |
 | Touchscreen | works | Goodix (I²C HID), 10 fingers at once |
 | Wi-Fi 7 (WCN7850), Bluetooth | works | |
@@ -38,9 +41,10 @@ Or build it yourself with `build.sh` (below).
 | USB-A | works | SuperSpeed |
 | HDMI | works | |
 | GPU (Adreno X1-85) | works | OpenGL 4.6, OpenGL ES 3.2, Vulkan 1.4 (Mesa) |
+| NPU (Hexagon, 45 TOPS) | partial | firmware runs and is reachable (`/dev/fastrpc-cdsp`); load, temperature and firmware state in Resources (NPU page). Apps cannot use it yet: Qualcomm's runtime (QNN/FastRPC libraries) is not packaged for Ubuntu |
 | Video decoding/encoding (Iris) | works | hardware H.264, HEVC, VP9, AV1 decode and H.264/HEVC encode; see [Hardware acceleration](#hardware-acceleration) |
 | SD card reader | works | |
-| Battery, charging, fan profiles | works | charge limit (GNOME "Preserve battery health") |
+| Battery, charging, fan profiles | works | charge limit (GNOME "Preserve battery health"); the fan runs at full speed if the CPU temperature cannot be read |
 | Windows (BitLocker) partitions | works | opened in Files with the BitLocker password or recovery key |
 | Fingerprint reader | works | EgisTec 1c7a:05a1 in the power button: GNOME login and lock screen, sudo; prints stay on the sensor (SDCP) and can be shared with Windows Hello; relabel fingers in Settings |
 
@@ -53,7 +57,8 @@ Known issues: switching a USB-C port from DisplayPort back to USB 3 can fail unt
   project's changes (`patches/kernel`), packaged as `linux-image-7.4.0-rc3-sb4edge`, wrapped in the stubble EFI
   stub so the devicetree is chosen from the SMBIOS hardware IDs.
 - **Out-of-tree drivers** (`extra/`): EC battery and keyboard, USB-C (retimers and PD controller helper).
-- **Firmware** from the Windows drivers (`fw/`, `windows-files/`): ADSP/CDSP, GPU, video codec, Wi-Fi board data, audio modules.
+- **Firmware** from the Windows drivers (`fw/`, `windows-files/`): ADSP/CDSP, GPU, video codec, audio modules, and the Wi-Fi board data (only
+  while Ubuntu's own `linux-firmware` lacks this board's entry; recent versions have it).
 - **Audio** (`overlay/audio`): topology, UCM for the four speakers, microphone setup, Fluence.
 - **Ambient light sensor** (`overlay/sensors`): the VEML3328 sits behind the ADSP (Qualcomm Sensor Core); Qualcomm's
   `adsprpcd` serves the sensor registry, `libssc` + iio-sensor-proxy 3.9 read it, GNOME adjusts the screen,
@@ -64,15 +69,18 @@ Known issues: switching a USB-C port from DisplayPort back to USB 3 can fail unt
   Fingerprint can relabel which finger a print is. An apt hook rebuilds both packages with the patches when Ubuntu
   updates them.
 - Rebuilt Ubuntu packages: cryptsetup (BitLocker volumes from recent Windows 11), libcamera (OV02C10), Resources
-  (Oryon CPU temperature and core count, Adreno GPU monitoring, Hexagon NPU compute DSP load, firmware state and temperature), libfprint with SDCP (`extra/libfprint`, fingerprint reader).
+  (Oryon CPU temperature and core count, Adreno GPU monitoring, Hexagon NPU page: compute DSP load, firmware state
+  and temperature), libfprint with SDCP (`extra/libfprint`, fingerprint reader).
+- **NPU load** (`extra/sb4-cdsp-stats`): a read-only module reads the Hexagon compute DSP's own load statistics from
+  shared memory (never wakes the DSP) for Resources.
 - **Fingerprint** (`extra/libfprint`): the EgisTec sensor only keeps enrolled prints over SDCP. libfprint MR !547
   adds SDCP to its egismoc driver; this sensor's model certificate arrives with one byte zeroed ("Microsoft
-  Cor\\x00oration"), so the patch here finds its CA by key identifier and accepts it only when Microsoft's signature
-  verifies on the restored bytes. Fingerprint is enabled for sudo and login (password still works).
-  Prints live on the chip and are shared with Windows: a finger enrolled in Windows Hello is given to a Linux user
-  after that user touches the sensor with it (`overlay/fingerprint/sb4edge-fingerprint-import`; touch-free import
-  with `AUTO_IMPORT=yes` in `/etc/default/sb4edge-fingerprint`, single-user systems); enrolling
-  the same finger in both makes each system delete the other's copy (see [INSTALL.md](INSTALL.md)).
+  Cor\\x00oration"), so the patch here restores exactly that byte and runs the normal full verification on the
+  restored certificate (Microsoft's signature over those bytes, chain to the SDCP root). Fingerprint is enabled for sudo and login (password still works).
+  Prints live on the chip and are shared with Windows: a finger enrolled in Windows Hello works for Linux login once
+  its owner touches the sensor with it (`sudo sb4edge-fingerprint-import`; the chip does not record which Windows
+  user enrolled a print); enrolling the same finger in both makes each system delete the other's copy (see
+  [INSTALL.md](INSTALL.md)).
 
 ## Hardware acceleration
 

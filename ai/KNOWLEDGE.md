@@ -131,8 +131,13 @@ implemented but not tested on hardware; **[open]** not solved.
 - **Iris** video codec (`qcom,x1e80100-iris`, falls back to sm8550; node in hamoa.dtsi, disabled because the
   firmware is signed per vendor). Enabled in the board dtsi with `qcvss8380.mbn` from Samsung's Windows graphics
   driver (qcdx8380 31.0.178.0, the same package as the GPU zap shader) [verified 2026-11-16].
-- Exposed as V4L2 stateful devices `qcom-iris-decoder` / `qcom-iris-encoder`, not VAAPI (the Adreno GPU has no video
-  engine; Mesa has no VAAPI driver for it). GStreamer `v4l2h264dec`/`v4l2h265dec`/`v4l2vp9dec`/`v4l2av1dec` (rank
+- Exposed as V4L2 stateful devices `qcom-iris-decoder` / `qcom-iris-encoder` (the Adreno GPU has no video engine;
+  Mesa has no VAAPI driver for it). VA-API on top: Ubuntu's qcom-va-driver (`qcom_drv_video.so`, msm alias) needs
+  the five Iris patches 0006-0010 (decode-order output = DEC_DISPLAY_DELAY controls, else every picture fails with
+  "S_CTRL DISPLAY_DELAY ... Invalid argument"). With them [verified 2026-11-19]: ffmpeg -hwaccel vaapi 4K H.264
+  40 Mbit/s 73 fps at 27 % of one core (software 380 %), output bit-identical to software for H.264 and HEVC; the
+  qcom-va-driver-tests suite passes (AV1 7 cases, error recovery, encoder, VPP scaling/tone mapping as root;
+  /dev/dma_heap/system is root-only). VPP overlay needs CDSP VPP, disabled in Ubuntu's build. GStreamer `v4l2h264dec`/`v4l2h265dec`/`v4l2vp9dec`/`v4l2av1dec` (rank
   primary+1, so GNOME players use them by default) and `v4l2h264enc`/`v4l2h265enc`; ffmpeg/mpv `*_v4l2m2m`
   (h264, hevc, vp9). Measured: 1080p H.264 650 fps at 32 % of one core (software: 398 %), 4K HEVC 240 fps at 43 %.
   VP9 1080p and AV1 720p decode verified (~500 fps, ~40 %). Only 4:2:0 8-bit main profiles: a VP9 profile 1 / AV1
@@ -212,17 +217,22 @@ implemented but not tested on hardware; **[open]** not solved.
   deletes the enrollment [verified]. libfprint **MR !547** (SDCP v2 for egismoc, unmerged) fixes it.
 - This sensor's SDCP model certificate arrives with **one byte zeroed** in the issuer ("Microsoft Cor\x00oration"),
   so OpenSSL cannot build the chain and the CA signature fails on the received bytes. Fix (`extra/libfprint` patch):
-  find the CA by authority key identifier, restore the byte, accept only if the CA's signature verifies on the
-  restored certificate, then verify the CA chain. Plus a double free on the verification error path in the MR.
+  only on "unable to get local issuer certificate", and only when that byte sequence occurs once, restore the byte
+  and run the same X509_verify_cert (X509_STRICT, no time check, same truststore) on the restored certificate
+  [verified 2026-11-18: "model certificate verified once its zeroed issuer byte was restored", prints listed].
+  (Until 2026-11-18 the fallback checked the signature by key identifier and then verified only the CA's chain.)
+  Plus a double free on the verification error path in the MR.
   The device MAC check passes on the received bytes, so the damage is in the sensor's stored certificate.
 - **Prints are stored on the chip and shared with Windows.** fprintd's enroll duplicate check deletes on-chip prints
   it does not know, so enrolling the same finger in Linux deletes the Windows Hello copy; Windows then drops the
   Linux one. A Linux-enrolled print is not usable by Windows (Windows Hello keeps its own database). Solution here:
-  enroll in Windows Hello; `sb4edge-fingerprint-import` records the unknown chip prints (SDCP enrollment IDs) as
-  fprintd prints of the Linux user [verified: unlock in Linux, Windows Hello still works, both ways after reboots].
-  Windows Hello prints carry no owner on the chip, so a print is assigned only after the user touches the sensor
-  with it (identify against the new prints); the boot service and pam_exec just report new prints. Touch-free import
-  (old behavior, single-user only) with AUTO_IMPORT=yes in /etc/default/sb4edge-fingerprint.
+  enroll in Windows Hello; `sb4edge-fingerprint-import` records an unknown chip print (SDCP enrollment ID) as an
+  fprintd print of a Linux user [verified: unlock in Linux, Windows Hello still works, both ways after reboots].
+  Chip prints carry no owner (list_prints: username/description empty, finger UNKNOWN), so since 2026-11-18 a print
+  is bound only after the user touches the sensor (identify_sync over the new prints; egismoc supports IDENTIFY).
+  Boot service and pam_exec only report new prints, unless AUTO_IMPORT=yes in /etc/default/sb4edge-fingerprint
+  (the old touch-free import: every new print -> the only regular user; a shared Windows Hello would give another
+  person's finger this account, sudo included - independent review, 2026-11-18).
 - Rest the finger; pressing is a power-button press.
 - Windows Hello names prints 1, 2, 3, not by finger, so imported prints get a guessed finger. Relabel with
   `sb4edge-fingerprint-import --rename FROM TO USER` or the pencil button per print in Settings -> Users ->

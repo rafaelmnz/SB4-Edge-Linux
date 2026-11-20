@@ -52,6 +52,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
+#include <sys/sysmacros.h>
 #include <time.h>
 #include <unistd.h>
 #include <linux/i2c.h>
@@ -105,28 +107,89 @@ static double now(void)
 	return ts.tv_sec + ts.tv_nsec / 1e9;
 }
 
+/* Test builds read a fake tree: -DSYSFS_ROOT='"/tmp/fx"' */
+#ifndef SYSFS_ROOT
+#define SYSFS_ROOT ""
+#endif
+
 /*
- * Is a filesystem mounted from a disk behind this USB controller (e.g. the live USB stick)? Then a
- * device on the port must keep its power.
+ * Is block device maj:min on a disk behind this USB controller? Follows stacked devices down to the disks:
+ * device mapper / md (LUKS, LVM, RAID: holders list their backing devices in slaves/) and loop devices
+ * (backing file -> the device of the filesystem holding it).
+ */
+static int dev_behind(unsigned int maj, unsigned int min, const char *want, int depth)
+{
+	char path[PATH_MAX], real[PATH_MAX], sub[2 * PATH_MAX];
+	DIR *d;
+	struct dirent *e;
+	FILE *f;
+	struct stat st;
+	int found = 0;
+
+	if (!maj || depth > 8)
+		return depth > 8;	/* too deep: be safe */
+	snprintf(path, sizeof(path), SYSFS_ROOT "/sys/dev/block/%u:%u", maj, min);
+	if (!realpath(path, real))
+		return 0;
+	if (strstr(real, want))
+		return 1;
+	snprintf(sub, sizeof(sub), "%s/slaves", real);
+	d = opendir(sub);
+	while (d && !found && (e = readdir(d))) {
+		unsigned int a, b;
+
+		if (e->d_name[0] == '.')
+			continue;
+		snprintf(sub, sizeof(sub), "%s/slaves/%s/dev", real, e->d_name);
+		f = fopen(sub, "r");
+		if (f && fscanf(f, "%u:%u", &a, &b) == 2)
+			found = dev_behind(a, b, want, depth + 1);
+		if (f)
+			fclose(f);
+	}
+	if (d)
+		closedir(d);
+	snprintf(sub, sizeof(sub), "%s/loop/backing_file", real);
+	if (!found && (f = fopen(sub, "r"))) {
+		if (fgets(path, sizeof(path), f)) {
+			path[strcspn(path, "\n")] = 0;
+			if (stat(path, &st) == 0)
+				found = dev_behind(major(st.st_dev), minor(st.st_dev), want, depth + 1);
+		}
+		fclose(f);
+	}
+	return found;
+}
+
+/*
+ * Is a filesystem mounted, or swap active, from a disk behind this USB controller (e.g. the live USB stick, or an
+ * encrypted external disk)? Then a device on the port must keep its power.
  */
 static int disk_mounted_behind(const char *usb)
 {
-	char line[1024], path[64], real[PATH_MAX], want[64];
+	char line[1024], want[64], name[512];
 	unsigned int maj, min;
+	struct stat st;
 	int found = 0;
-	FILE *f = fopen("/proc/self/mountinfo", "r");
+	FILE *f = fopen(SYSFS_ROOT "/proc/self/mountinfo", "r");
 
 	if (!f)
 		return 1;	/* unknown: be safe */
 	snprintf(want, sizeof(want), "/%s.usb/", usb);
-	while (!found && fgets(line, sizeof(line), f)) {
-		if (sscanf(line, "%*s %*s %u:%u", &maj, &min) != 2 || !maj)
-			continue;
-		snprintf(path, sizeof(path), "/sys/dev/block/%u:%u", maj, min);
-		if (realpath(path, real) && strstr(real, want))
-			found = 1;
-	}
+	while (!found && fgets(line, sizeof(line), f))
+		if (sscanf(line, "%*s %*s %u:%u", &maj, &min) == 2)
+			found = dev_behind(maj, min, want, 0);
 	fclose(f);
+	f = fopen(SYSFS_ROOT "/proc/swaps", "r");
+	while (f && !found && fgets(line, sizeof(line), f)) {
+		/* "Filename Type Size Used Priority": a partition (st_rdev) or a swap file (its filesystem's st_dev) */
+		if (sscanf(line, "%511s", name) != 1 || name[0] != '/' || stat(name, &st) != 0)
+			continue;
+		found = S_ISBLK(st.st_mode) ? dev_behind(major(st.st_rdev), minor(st.st_rdev), want, 0)
+					    : dev_behind(major(st.st_dev), minor(st.st_dev), want, 0);
+	}
+	if (f)
+		fclose(f);
 	return found;
 }
 

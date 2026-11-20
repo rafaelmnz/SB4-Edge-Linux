@@ -13,18 +13,25 @@ apt-get install -y -qq meson ninja-build pkg-config gcc libglib2.0-dev libqmi-gl
 [ -d /work/research/libssc/.git ] || git clone -q https://codeberg.org/DylanVanAssche/libssc.git /work/research/libssc
 [ -d /work/research/iio-sensor-proxy/.git ] || git clone -q https://gitlab.freedesktop.org/hadess/iio-sensor-proxy.git /work/research/iio-sensor-proxy
 D=/work/out/ssc/root
-rm -rf "$D" /tmp/b1 /tmp/b2
-cd /work/research/libssc
-git -c safe.directory='*' checkout -q v0.4.4 -- . 2>/dev/null || true
-git -c safe.directory='*' apply --check /work/patches/libssc/*.patch 2>/dev/null && git -c safe.directory='*' apply /work/patches/libssc/*.patch
+rm -rf "$D" /tmp/b1 /tmp/b2 /tmp/src-libssc /tmp/src-iio
+# Build from a clean export of each pinned tag (research/ may hold local experiments); every patch must apply.
+src() { # src <repo> <tag> <dir> <patch dir>
+	mkdir -p "$3"
+	git -C "$1" -c safe.directory='*' archive "$2" | tar -x -C "$3"
+	for p in "$4"/*.patch; do
+		[ -e "$p" ] || continue
+		git -C "$3" apply --verbose "$p" || { echo "$p does not apply to $2" >&2; exit 1; }
+	done
+}
+src /work/research/libssc v0.4.4 /tmp/src-libssc /work/patches/libssc
+cd /tmp/src-libssc
 meson setup /tmp/b1 --prefix=/usr --libdir=lib/aarch64-linux-gnu --buildtype=release -Dman=false -Dtests=false >/dev/null 2>&1 || meson setup /tmp/b1 --prefix=/usr --libdir=lib/aarch64-linux-gnu --buildtype=release
 meson compile -C /tmp/b1 >/dev/null
 meson install -C /tmp/b1 --destdir "$D" >/dev/null
 meson install -C /tmp/b1 >/dev/null   # for iio-sensor-proxy to find it
-cd /work/research/iio-sensor-proxy
-git -c safe.directory='*' checkout -q 3.9 -- . 2>/dev/null || git -c safe.directory='*' checkout -q 3.9
-# client_vanished_cb aborted when a client left while a client table was gone (auto-brightness off until reboot)
-git -c safe.directory='*' apply --check /work/patches/iio-sensor-proxy/*.patch 2>/dev/null && git -c safe.directory='*' apply /work/patches/iio-sensor-proxy/*.patch
+# patches/iio-sensor-proxy: client_vanished_cb aborted when a client left while a client table was gone
+src /work/research/iio-sensor-proxy 3.9 /tmp/src-iio /work/patches/iio-sensor-proxy
+cd /tmp/src-iio
 meson setup /tmp/b2 --prefix=/usr --sysconfdir=/etc --libexecdir=libexec --buildtype=release -Dssc-support=enabled -Dgtk-tests=false -Dtests=false -Dgtk_doc=false
 meson compile -C /tmp/b2 >/dev/null
 meson install -C /tmp/b2 --destdir "$D" >/dev/null

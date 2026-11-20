@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-# diff:  dpkgstatus.py diff BEFORE AFTER OUT.json  -> stanzas new/changed in AFTER
+# diff:  dpkgstatus.py diff BEFORE AFTER OUT.json  -> stanzas new/changed in AFTER; a package whose stanza is gone
+#        from AFTER (removed by the upgrade, no config files left) is recorded as null
 # merge: dpkgstatus.py merge STATUS CHANGED.json [BEFORE] -> apply those stanzas to STATUS
 #        With BEFORE (the lower layer's status before the change), a package that was installed in BEFORE but
 #        is not installed in STATUS was removed by this layer (e.g. the live layer swaps dracut for
 #        initramfs-tools), so its upgraded stanza is skipped: merging it would mark it installed with no files.
+#        A null (removed below) drops the package from STATUS when STATUS still has the stanza it inherited from
+#        BEFORE; a stanza the upper layer changed itself (its own install of that package) is kept.
 import json
 import sys
 
@@ -42,13 +45,29 @@ if sys.argv[1] == "diff":
         if k not in before
         or any(field(before[k], f) != field(v, f) for f in ("Version", "Status"))
     }
+    gone = sorted(k for k in before if k not in after)
+    changed.update({k: None for k in gone})
     json.dump(changed, open(sys.argv[4], "w"))
-    print(len(changed), "changed/new packages:", " ".join(sorted(k.split("|")[0] for k in changed)))
+    print(len(changed) - len(gone), "changed/new packages:",
+          " ".join(sorted(k.split("|")[0] for k in changed if changed[k] is not None)))
+    if gone:
+        print(len(gone), "removed packages:", " ".join(k.split("|")[0] for k in gone))
 elif sys.argv[1] == "merge":
     status = parse(sys.argv[2])
     changed = json.load(open(sys.argv[3]))
-    if len(sys.argv) > 4:
-        before = parse(sys.argv[4])
+    before = parse(sys.argv[4]) if len(sys.argv) > 4 else None
+    gone = [k for k in changed if changed[k] is None]
+    for k in gone:
+        del changed[k]
+    dropped = [k for k in gone if k in status and (before is None or status[k] == before.get(k))]
+    for k in dropped:
+        del status[k]
+    if dropped:
+        print("  removed below, dropped here:", " ".join(sorted(k.split("|")[0] for k in dropped)))
+    kept = [k for k in gone if k in status and k not in dropped]
+    if kept:
+        print("  removed below, kept (changed by this layer):", " ".join(sorted(k.split("|")[0] for k in kept)))
+    if before is not None:
         installed = lambda st, k: k in st and field(st[k], "Status") == "install ok installed"
         removed = [k for k in changed if installed(before, k) and not installed(status, k)]
         for k in removed:

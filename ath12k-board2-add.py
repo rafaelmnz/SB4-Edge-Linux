@@ -3,6 +3,8 @@
 # reusing linux-firmware's shared OEM board-id 255 data (the generic NCM825 calibration, already
 # used by 18 other subsystem IDs). Samsung's own bdwlan.elf from Windows makes the firmware crash
 # during the board-data download (-110), so it cannot be used.
+# linux-firmware 20261110 ships this entry itself (same data): then nothing is written and it exits 0, so the
+# package file is used and later firmware updates are not shadowed by an override.
 #   ath12k-board2-add.py IN_board-2.bin OUT_board-2.bin
 import struct
 import sys
@@ -40,7 +42,8 @@ for t, v in ies:
     subs = list(tlvs(v))
     names = [s.decode() for st, s in subs if st == SUB_NAME]
     if NEW in names:
-        sys.exit("entry already present")
+        print(f"{NEW} already in the input: no override needed")
+        sys.exit(0)
     if DONOR in names:
         donor = next(s for st, s in subs if st == SUB_DATA)
 assert donor, "donor entry not found"

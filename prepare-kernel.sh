@@ -17,4 +17,7 @@ $G am -q /work/patches/kernel/000[123]-*.patch
 $G apply /work/patches/kernel/0004-sb4edge-local-changes.patch
 # Iris (video decoder): timestamp metadata index read one past its array while seeking (UBSAN); not fixed upstream yet.
 $G apply /work/patches/kernel/0005-media-iris-wrap-the-timestamp-metadata-index-right-a.patch
+# Iris for VA-API (qcom-va-driver): decode-order output, larger capture pools, encoder deblocking controls,
+# timestamps on error buffers, NOSHOW recycling (AV1). From qcom-va-driver's patches/ (GPL-2.0); 0006 rebased on 7.4-rc3.
+for p in /work/patches/kernel/00{06,07,08,09,10}-*.patch; do $G apply "$p"; done
 $G log --oneline -4

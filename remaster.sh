@@ -150,8 +150,11 @@ log "hardware fixes from the first USB boot (hw-report/)"
 # linux-firmware's shared board-id 255 (generic NCM825) data. /lib/firmware/updates wins over the package file.
 W=usr/lib/firmware/ath12k/WCN7850/hw2.0
 zstd -dc "$B/$W/board-2.bin.zst" > /iso/board-2.orig.bin
+# linux-firmware 20261110 has the entry itself (same data): the helper then writes nothing and no override is installed.
 mkdir -p "$B/usr/lib/firmware/updates/ath12k/WCN7850/hw2.0"
 python3 /work/ath12k-board2-add.py /iso/board-2.orig.bin "$B/usr/lib/firmware/updates/ath12k/WCN7850/hw2.0/board-2.bin"
+[ -s "$B/usr/lib/firmware/updates/ath12k/WCN7850/hw2.0/board-2.bin" ] ||
+	rmdir -p --ignore-fail-on-non-empty "$B/usr/lib/firmware/updates/ath12k/WCN7850/hw2.0"
 rm -f /iso/board-2.orig.bin "$B/$W/board.bin"
 # Use the in-kernel qcom_pd_mapper only (the userspace one races it for the servreg locator).
 ln -sf /dev/null "$B/etc/systemd/system/pd-mapper.service"
@@ -451,8 +454,8 @@ grep -q pam_fprintd.so /etc/pam.d/common-auth
 ! dpkg-query -W -f="\${Status}" resources 2>/dev/null | grep -q "ok installed" || dpkg-query -W -f="\${Version}" resources | grep -q sb4edge'
 # The sensor's prints live on the chip and are shared with Windows; enrolling the same finger on both sides makes
 # each delete the other's. sb4edge-fingerprint-import gives a Linux user a finger enrolled in Windows Hello once that
-# user touches the sensor with it ("sudo sb4edge-fingerprint-import"); the boot service and pam_exec only report new
-# prints. AUTO_IMPORT=yes in /etc/default/sb4edge-fingerprint brings back the touch-free import (single-user only).
+# user touches the sensor with it (the chip's prints carry no owner). At boot and login it only reports new prints,
+# unless AUTO_IMPORT=yes in /etc/default/sb4edge-fingerprint (touch-free, single-user laptops only).
 install -Dm755 /work/overlay/fingerprint/sb4edge-fingerprint-import $M/usr/sbin/sb4edge-fingerprint-import
 install -Dm644 /work/overlay/fingerprint/sb4edge-fingerprint.default $M/etc/default/sb4edge-fingerprint
 install -Dm644 /work/overlay/fingerprint/sb4edge-fingerprint-import.service $M/usr/lib/systemd/system/sb4edge-fingerprint-import.service

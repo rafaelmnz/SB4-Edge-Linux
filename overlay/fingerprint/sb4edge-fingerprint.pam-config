@@ -1,4 +1,4 @@
-Name: Import fingerprints enrolled in Windows Hello at login (SB4-Edge)
+Name: Check for fingerprints enrolled in Windows Hello at login (SB4-Edge)
 Default: yes
 Priority: 0
 Session-Type: Additional
