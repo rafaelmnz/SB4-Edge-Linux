@@ -333,7 +333,7 @@ rm -f "$B/usr/share/pipewire/pipewire.conf.d/61-sb4edge-fluence.conf"
 # Ambient light sensor (overlay/sensors): VEML3328 behind the ADSP (Qualcomm SSC), data type "color". The ADSP sensors
 # domain reads/writes its registry through adsprpcd sensorspd (sb4edge-sensors.service; the firmware asserts and takes
 # the laptop down if the registry is read-only, as with hexagonrpcd); iio-sensor-proxy 3.9 + libssc (build-ssc.sh) feed
-# GNOME's automatic screen brightness; sb4edge-kbd-ambient switches the keyboard backlight like Windows does.
+# GNOME's automatic screen brightness; sb4edge-kbd-ambient dims the keyboard backlight one step in dim light, off in bright light.
 QS=/usr/share/qcom/x1e80100/Samsung/galaxy-book4-edge-16
 [ -s /work/sensors/qcom-root/sensors/sns_reg.conf ] || { echo "sensor registry/config (sensors/qcom-root) missing"; exit 1; }
 mkdir -p "$B$QS"; cp -a /work/sensors/qcom-root/sensors /work/sensors/qcom-root/socinfo "$B$QS/"

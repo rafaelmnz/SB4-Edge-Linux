@@ -57,7 +57,7 @@ Known issues: switching a USB-C port from DisplayPort back to USB 3 can fail unt
 - **Audio** (`overlay/audio`): topology, UCM for the four speakers, microphone setup, Fluence.
 - **Ambient light sensor** (`overlay/sensors`): the VEML3328 sits behind the ADSP (Qualcomm Sensor Core); Qualcomm's
   `adsprpcd` serves the sensor registry, `libssc` + iio-sensor-proxy 3.9 read it, GNOME adjusts the screen,
-  `sb4edge-kbd-ambient` switches the keyboard backlight.
+  `sb4edge-kbd-ambient` keeps the keyboard backlight at your level in normal light, one step dimmer below 10 lux, off above 40 lux and while the display is off (`/etc/default/sb4edge-kbd-ambient`).
 - **Boot**: rEFInd on the installed system (Linux and Windows), GRUB on the USB stick.
 - **GNOME** (`patches/gnome-*`): Settings -> Power -> "Brightness Adjustment" chooses how the light sensor sets
   the brightness (up to 25 % around the slider, or a fixed room-light curve the slider shifts); Settings -> Users ->

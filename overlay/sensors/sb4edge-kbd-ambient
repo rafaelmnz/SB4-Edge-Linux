@@ -1,24 +1,65 @@
 #!/usr/bin/python3
-"""Keyboard backlight follows the ambient light sensor, as on Windows (Samsung Galaxy Book4 Edge).
+"""Keyboard backlight follows the ambient light sensor (Samsung Galaxy Book4 Edge).
 
-Runs in the user session (systemd user service), reads lux from iio-sensor-proxy and switches the keyboard backlight
-through UPower: off when it has been brighter than OFF_LUX for DEBOUNCE seconds, back on (to the level it had before)
-when it has been darker than ON_LUX for DEBOUNCE seconds. The thresholds and debounce are the ones Samsung's sensor
-config uses on Windows (keyboard_backlight_condition: on below 50 lux, off above 100 lux, 3 s).
+Runs in the user session (systemd user service), reads lux from iio-sensor-proxy and sets the keyboard backlight
+(levels 0-3) through UPower, relative to the level the user chose, like GNOME's screen 'adjust' mode:
 
-It acts only on those transitions: a level set by hand stays until the light crosses a threshold again. Turning the
-keyboard backlight off by hand keeps it off (it is turned back on only if it was turned off here).
+    bright (above OFF_ABOVE = 40 lux)          -> off (a lit keyboard is invisible in bright light, as on Windows)
+    normal (DIM_BELOW - OFF_ABOVE, 10-40 lux)  -> the user's level
+    dim    (below DIM_BELOW = 10 lux)          -> the user's level minus DIM_BY (1 step, about 33 %; never below 1)
+
+The hardware has 3 steps, so one step is the closest to the screen's 25 % dimming. The user's level is whatever they
+set by hand (Fn+F9, Settings, UPower); set in the dim band, it counts as DIM_BY steps above, so dark rooms stay one
+step dimmer than normal light. It is kept in ~/.local/state/sb4edge-kbd-ambient between sessions.
+
+A band changes only after the light has been past a boundary by HYSTERESIS (25 %) for DEBOUNCE seconds.
+While GNOME has the display off (idle blank, lock), the keyboard is off too; it comes back with the display.
+Settings: DIM_BELOW=, OFF_ABOVE=, DIM_BY= in /etc/default/sb4edge-kbd-ambient.
 """
 import os
 import sys
 from gi.repository import Gio, GLib
 
-ON_LUX, OFF_LUX, DEBOUNCE = 50.0, 100.0, 3
-# Exists while the backlight is off because of us, so sb4edge-backlight does not remember "off" as the user's choice.
+DIM_BELOW, OFF_ABOVE, DIM_BY = 10.0, 40.0, 1
+HYSTERESIS, DEBOUNCE = 0.25, 3
+MAX_LEVEL = 3
+CONFIG = "/etc/default/sb4edge-kbd-ambient"
+STATE = os.path.join(os.environ.get("XDG_STATE_HOME", os.path.expanduser("~/.local/state")), "sb4edge-kbd-ambient")
+DIM, NORMAL, BRIGHT = 0, 1, 2
+NAMES = ("dim", "normal", "bright")
+
+
+def load_config():
+    global DIM_BELOW, OFF_ABOVE, DIM_BY
+    try:
+        lines = open(CONFIG).read().splitlines()
+    except OSError:
+        return
+    vals = {}
+    for line in lines:
+        k, _, v = line.partition("=")
+        try:
+            vals[k.strip()] = float(v.strip().strip("\"'"))
+        except ValueError:
+            pass
+    dim, off, by = vals.get("DIM_BELOW", DIM_BELOW), vals.get("OFF_ABOVE", OFF_ABOVE), vals.get("DIM_BY", DIM_BY)
+    if 0 <= dim < off and 0 <= by <= MAX_LEVEL - 1:
+        DIM_BELOW, OFF_ABOVE, DIM_BY = dim, off, int(by)
+    else:
+        print(f"{CONFIG}: ignored (needs 0 <= DIM_BELOW < OFF_ABOVE, 0 <= DIM_BY <= 2)", flush=True)
+
+
+def band_of(lux):
+    return DIM if lux < DIM_BELOW else NORMAL if lux <= OFF_ABOVE else BRIGHT
+
+
+# Exists while the keyboard level was set here (not by the user), so sb4edge-backlight does not remember it as the
+# user's choice for the next boot.
 MARK = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/run/user/%d" % os.getuid()), "sb4edge-kbd-auto-off")
 
 SP = ("net.hadess.SensorProxy", "/net/hadess/SensorProxy", "net.hadess.SensorProxy")
 KBD = ("org.freedesktop.UPower", "/org/freedesktop/UPower/KbdBacklight", "org.freedesktop.UPower.KbdBacklight")
+DC = ("org.gnome.Mutter.DisplayConfig", "/org/gnome/Mutter/DisplayConfig", "org.gnome.Mutter.DisplayConfig")
 
 
 class Daemon:
@@ -26,13 +67,92 @@ class Daemon:
         self.bus = Gio.bus_get_sync(Gio.BusType.SYSTEM)
         self.sensor = None
         self.kbd = Gio.DBusProxy.new_sync(self.bus, 0, None, *KBD)
-        self.state = None        # "dark" / "bright": the last state acted on
-        self.pending = None      # state waiting for the debounce
+        self.kbd.connect("g-signal", self.kbd_signal)
+        self.band = None         # the band last acted on
+        self.pending = None      # band waiting for the debounce
         self.timer = 0
-        self.saved = None        # level before we turned it off (None: we did not turn it off)
+        self.ours = None         # level we last set (anything else seen afterwards is a change by hand)
+        self.seen = None         # last level reported (UPower sends two signals per change)
+        self.base = self.load_base()
+        self.user_off = False    # turned off by hand: stays off until the light changes band
+        self.display_off = False
         self.mark(False)
         Gio.bus_watch_name_on_connection(self.bus, SP[0], 0, self.appeared, self.vanished)
+        self.session = Gio.bus_get_sync(Gio.BusType.SESSION)
+        Gio.bus_watch_name_on_connection(self.session, DC[0], 0, self.dc_appeared, None)
 
+    # --- the user's level -------------------------------------------------------------------------------
+    def load_base(self):
+        try:
+            v = int(open(STATE).read().strip())
+            if 1 <= v <= MAX_LEVEL:
+                return v
+        except (OSError, ValueError):
+            pass
+        try:
+            cur = self.level()
+            if cur > 0:
+                return cur
+        except GLib.Error:
+            pass
+        return MAX_LEVEL
+
+    def save_base(self):
+        try:
+            os.makedirs(os.path.dirname(STATE), exist_ok=True)
+            with open(STATE, "w") as f:
+                f.write(f"{self.base}\n")
+        except OSError:
+            pass
+
+    def manual(self, value):
+        """The user set the keyboard to value by hand: make it the new reference."""
+        if value == self.ours or value == self.seen:
+            return
+        self.seen = value
+        self.ours = None
+        self.mark(False)
+        if value <= 0:
+            self.user_off = True     # stays off until the light changes band
+            return
+        self.user_off = False
+        self.base = min(MAX_LEVEL, value + DIM_BY) if self.band == DIM else value
+        self.save_base()
+        print(f"set by hand to {value}: your level is now {self.base}", flush=True)
+
+    def kbd_signal(self, _proxy, _sender, signal, params):
+        if signal in ("BrightnessChanged", "BrightnessChangedWithSource"):
+            self.manual(params.unpack()[0])
+
+    # --- display power (GNOME blanks the screen when idle) -------------------------------------------------
+    def dc_appeared(self, _conn, _name, _owner):
+        self.dc = Gio.DBusProxy.new_sync(self.session, 0, None, *DC)
+        self.dc.connect("g-properties-changed", self.dc_changed)
+        self.display_power(self.dc.get_cached_property("PowerSaveMode"))
+
+    def dc_changed(self, proxy, props, _inv):
+        if "PowerSaveMode" in props.keys():
+            self.display_power(proxy.get_cached_property("PowerSaveMode"))
+
+    def display_power(self, mode):
+        off = mode is not None and mode.unpack() != 0
+        if off == self.display_off:
+            return
+        self.display_off = off
+        try:
+            if off:
+                if self.level() > 0:
+                    self.set_level(0)
+                    self.mark(True)
+                print("display off: keyboard off", flush=True)
+            elif self.band is not None and not self.user_off:
+                self.set_level(self.target(self.band))
+                self.mark(True)
+                print(f"display on: keyboard {self.level()}", flush=True)
+        except GLib.Error as e:
+            print(f"keyboard backlight: {e.message}", flush=True)
+
+    # --- light sensor -----------------------------------------------------------------------------------
     def appeared(self, _conn, _name, _owner):
         self.sensor = Gio.DBusProxy.new_sync(self.bus, 0, None, *SP)
         if not self.sensor.get_cached_property("HasAmbientLight").unpack():
@@ -60,15 +180,34 @@ class Daemon:
             self.timer = 0
         self.pending = None
 
+    def wanted_band(self, lux):
+        """Band for this light, staying in the current band until the light is HYSTERESIS past its edges."""
+        b = band_of(lux)
+        cur = self.band
+        if cur is None or b == cur:
+            return b
+        lo = (0.0, DIM_BELOW, OFF_ABOVE)[cur]
+        hi = (DIM_BELOW, OFF_ABOVE, float("inf"))[cur]
+        if lo * (1 - HYSTERESIS) <= lux < hi * (1 + HYSTERESIS):
+            return cur
+        return b
+
     def update(self):
         lux = self.sensor.get_cached_property("LightLevel").unpack()
-        want = "bright" if lux > OFF_LUX else "dark" if lux < ON_LUX else self.pending or self.state
-        if want == self.state:
+        want = self.wanted_band(lux)
+        if want == self.band:
             self.cancel()
         elif want != self.pending:
             self.cancel()
             self.pending = want
             self.timer = GLib.timeout_add_seconds(DEBOUNCE, self.apply)
+
+    def target(self, band):
+        if band == BRIGHT:
+            return 0
+        if band == DIM:
+            return max(1, self.base - DIM_BY)
+        return self.base
 
     @staticmethod
     def mark(on):
@@ -84,30 +223,34 @@ class Daemon:
         return self.kbd.call_sync("GetBrightness", None, 0, -1, None).unpack()[0]
 
     def set_level(self, v):
+        self.ours = self.seen = v    # before the call: UPower signals the change while we wait
         self.kbd.call_sync("SetBrightness", GLib.Variant("(i)", (v,)), 0, -1, None)
 
     def apply(self):
         self.timer = 0
         new, self.pending = self.pending, None
-        self.state = new
         try:
             cur = self.level()
-            if new == "bright" and cur > 0:
-                self.saved = cur
-                self.mark(True)
-                self.set_level(0)
-            elif new == "dark" and self.saved is not None:
-                if cur == 0:   # still off as we left it
-                    self.set_level(self.saved)
-                self.saved = None
-                self.mark(False)
-            print(f"{new}: keyboard {cur} -> {self.level()}", flush=True)
+            if self.ours is not None and cur != self.ours:
+                self.manual(cur)     # a change by hand the signal did not report
+            self.band = new
+            self.user_off = False
+            want = 0 if self.display_off else self.target(new)
+            if cur != want:
+                self.set_level(want)
+            self.ours = want
+            self.mark(True)
+            print(f"{NAMES[new]} light: keyboard {cur} -> {self.level()} (your level {self.base})", flush=True)
         except GLib.Error as e:
+            self.band = new
             print(f"keyboard backlight: {e.message}", flush=True)
         return GLib.SOURCE_REMOVE
 
 
 if __name__ == "__main__":
+    load_config()
+    print(f"keyboard backlight: off above {OFF_ABOVE:g} lux, your level from {DIM_BELOW:g} lux, "
+          f"{DIM_BY} step(s) dimmer below", flush=True)
     Daemon()
     try:
         GLib.MainLoop().run()
