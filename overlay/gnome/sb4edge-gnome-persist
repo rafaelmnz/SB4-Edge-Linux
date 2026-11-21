@@ -19,7 +19,7 @@ import sys
 
 LIB = "/usr/lib/sb4edge"
 PAM = "/etc/pam.d/gdm-fingerprint"
-PAM_LINE = "auth\t[success=done default=ignore]\tpam_exec.so quiet /usr/lib/sb4edge/sb4edge-fp-token"
+PAM_LINE = "auth\t[success=done default=ignore]\tpam_exec.so quiet quiet_log /usr/lib/sb4edge/sb4edge-fp-token"
 OWN_EXTENSIONS = ["hidetopbar-multimonitor@linuxitos.local", "*@sb4edge"]
 
 
@@ -39,7 +39,17 @@ def pam_line():
         src = open(PAM).read()
     except FileNotFoundError:
         return
-    if "sb4edge-fp-token" in src or not os.access(f"{LIB}/sb4edge-fp-token", os.X_OK):
+    if PAM_LINE in src or not os.access(f"{LIB}/sb4edge-fp-token", os.X_OK):
+        return
+    old = re.search(r"^auth\s.*sb4edge-fp-token.*$", src, re.M)
+    if old:                                   # an older form of our line: replace it
+        new = src[:old.start()] + PAM_LINE + src[old.end():]
+        tmp = PAM + ".sb4edge-tmp"
+        with open(tmp, "w") as f:
+            f.write(new)
+        os.chmod(tmp, os.stat(PAM).st_mode & 0o7777)
+        os.replace(tmp, PAM)
+        log(f"{PAM}: user-chooser token check updated")
         return
     m = re.search(r"^auth\s+required\s+pam_fprintd\.so.*$", src, re.M)
     if not m:
