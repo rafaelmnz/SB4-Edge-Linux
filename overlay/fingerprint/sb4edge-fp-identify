@@ -1,0 +1,210 @@
+#!/usr/bin/python3 -I
+"""sb4edge: log in by fingerprint straight from the GDM user chooser.
+
+The greeter (patched loginDialog.js, see sb4edge-gdm-fp-overlay) calls Start() while the user list is shown and
+Stop() when it goes away. Meanwhile this service asks fprintd to verify the finger against each user that has
+enrolled fingerprints, in turn. On a match it releases the reader, leaves a one-time token for that user in
+/run/sb4edge/fp-token (root only, valid 20 s) and emits Identified(user). The greeter then selects that user;
+the gdm-fingerprint PAM stack accepts the fresh token (sb4edge-fp-token), so one touch is enough.
+It only listens while the greeter's login session is the active one, so it never takes the reader away from
+the lock screen of a running session. With several users, a finger that doesn't match the user being tried
+moves on to the next user: touch again.
+"""
+import os
+import pwd
+import time
+
+from gi.repository import Gio, GLib
+
+BUS_NAME = "org.sb4edge.FingerprintIdentify"
+PATH = "/org/sb4edge/FingerprintIdentify"
+TOKEN_DIR = "/run/sb4edge/fp-token"
+XML = f"""<node><interface name="{BUS_NAME}">
+  <method name="Start"/><method name="Stop"/>
+  <signal name="Identified"><arg type="s" name="user"/></signal>
+</interface></node>"""
+
+sysbus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+
+
+def log(msg):
+    print(msg, flush=True)
+
+
+def fprint(path, iface, method, args=None, sig=None):
+    return sysbus.call_sync("net.reactivated.Fprint", path, iface, method, args,
+                            GLib.VariantType(sig) if sig else None, Gio.DBusCallFlags.NONE, 10000, None)
+
+
+class Identifier:
+    def __init__(self):
+        self.owner = None           # unique bus name of the greeter that called Start
+        self.session = None         # its logind session object path
+        self.dev = None
+        self.users = []
+        self.idx = 0
+        self.claimed = None
+        self.sig = 0
+        self.poll = 0
+
+    # ---- control from the greeter ----
+    def start(self, sender):
+        self.stop()
+        self.owner = sender
+        try:
+            pid = sysbus.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+                                   "GetConnectionUnixProcessID", GLib.Variant("(s)", (sender,)),
+                                   GLib.VariantType("(u)"), Gio.DBusCallFlags.NONE, -1, None).unpack()[0]
+            self.session = sysbus.call_sync("org.freedesktop.login1", "/org/freedesktop/login1",
+                                            "org.freedesktop.login1.Manager", "GetSessionByPID",
+                                            GLib.Variant("(u)", (pid,)), GLib.VariantType("(o)"),
+                                            Gio.DBusCallFlags.NONE, -1, None).unpack()[0]
+        except GLib.Error as err:
+            log(f"no session for caller: {err.message}")
+            self.session = None
+        self.poll = GLib.timeout_add_seconds(1, self.tick)
+        self.tick()
+
+    def stop(self):
+        if self.poll:
+            GLib.source_remove(self.poll)
+            self.poll = 0
+        self.release()
+        self.owner = None
+
+    # ---- reader handling ----
+    def session_active(self):
+        if not self.session:
+            return True
+        try:
+            v = sysbus.call_sync("org.freedesktop.login1", self.session, "org.freedesktop.DBus.Properties", "Get",
+                                 GLib.Variant("(ss)", ("org.freedesktop.login1.Session", "Active")),
+                                 GLib.VariantType("(v)"), Gio.DBusCallFlags.NONE, -1, None)
+            return v.unpack()[0]
+        except GLib.Error:
+            return False
+
+    def tick(self):
+        if not self.owner:
+            return GLib.SOURCE_REMOVE
+        active = self.session_active()
+        if active and not self.claimed:
+            self.begin()
+        elif not active and self.claimed:
+            log("greeter session not active: reader released")
+            self.release()
+        return GLib.SOURCE_CONTINUE
+
+    def enrolled_users(self):
+        users = []
+        for pw in pwd.getpwall():
+            if pw.pw_uid < 1000 or pw.pw_uid >= 60000 or pw.pw_shell.endswith(("nologin", "false")):
+                continue
+            try:
+                fingers = fprint(self.dev, "net.reactivated.Fprint.Device", "ListEnrolledFingers",
+                                 GLib.Variant("(s)", (pw.pw_name,)), "(as)").unpack()[0]
+            except GLib.Error:
+                fingers = []
+            if fingers:
+                users.append(pw.pw_name)
+        return users
+
+    def begin(self):
+        try:
+            self.dev = fprint("/net/reactivated/Fprint/Manager", "net.reactivated.Fprint.Manager",
+                              "GetDefaultDevice", None, "(o)").unpack()[0]
+            self.users = self.enrolled_users()
+        except GLib.Error as err:
+            log(f"no reader: {err.message}")
+            return
+        if not self.users:
+            return
+        self.idx %= len(self.users)
+        self.verify(self.users[self.idx])
+
+    def verify(self, user):
+        try:
+            fprint(self.dev, "net.reactivated.Fprint.Device", "Claim", GLib.Variant("(s)", (user,)))
+        except GLib.Error as err:
+            log(f"claim for {user} failed: {err.message}")
+            return
+        self.claimed = user
+        self.sig = sysbus.signal_subscribe(None, "net.reactivated.Fprint.Device",
+                                           "VerifyStatus", self.dev, None, Gio.DBusSignalFlags.NONE,
+                                           self.on_status)
+        try:
+            fprint(self.dev, "net.reactivated.Fprint.Device", "VerifyStart", GLib.Variant("(s)", ("any",)))
+            log(f"waiting for a finger ({user})")
+        except GLib.Error as err:
+            log(f"verify for {user} failed: {err.message}")
+            self.release()
+
+    def release(self):
+        if self.sig:
+            sysbus.signal_unsubscribe(self.sig)
+            self.sig = 0
+        if self.claimed:
+            for m in ("VerifyStop", "Release"):
+                try:
+                    fprint(self.dev, "net.reactivated.Fprint.Device", m)
+                except GLib.Error:
+                    pass
+            self.claimed = None
+
+    def on_status(self, conn, sender, path, iface, signal, params):
+        result, done = params.unpack()
+        user = self.claimed
+        log(f"reader: {result} done={done}")
+        if not done or not user:
+            return
+        if result == "verify-match":
+            self.release()
+            write_token(user)
+            log(f"match: {user}")
+            sysbus.emit_signal(self.owner, PATH, BUS_NAME, "Identified", GLib.Variant("(s)", (user,)))
+            self.stop()
+            return
+        log(f"{result} ({user})")
+        self.release()
+        if result == "verify-no-match":
+            self.idx += 1                  # next user; same user again if there is only one
+        if self.owner:
+            GLib.timeout_add(300, lambda: (self.owner and not self.claimed and self.session_active()
+                                           and self.begin(), GLib.SOURCE_REMOVE)[1])
+
+
+def write_token(user):
+    os.makedirs(TOKEN_DIR, mode=0o700, exist_ok=True)
+    os.chmod(TOKEN_DIR, 0o700)
+    path = os.path.join(TOKEN_DIR, user)
+    fd = os.open(path + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    os.write(fd, f"{time.clock_gettime(time.CLOCK_BOOTTIME):.0f}\n".encode())
+    os.close(fd)
+    os.replace(path + ".tmp", path)
+
+
+ident = Identifier()
+
+
+def on_call(conn, sender, path, iface, method, params, inv):
+    if method == "Start":
+        ident.start(sender)
+    elif method == "Stop":
+        if ident.owner in (None, sender):
+            ident.stop()
+    inv.return_value(None)
+
+
+def on_name_owner(conn, sender, path, iface, signal, params):
+    name, old, new = params.unpack()
+    if name == ident.owner and not new:         # greeter went away without Stop
+        ident.stop()
+
+
+node = Gio.DBusNodeInfo.new_for_xml(XML)
+sysbus.register_object(PATH, node.interfaces[0], on_call, None, None)
+sysbus.signal_subscribe("org.freedesktop.DBus", "org.freedesktop.DBus", "NameOwnerChanged",
+                        "/org/freedesktop/DBus", None, Gio.DBusSignalFlags.NONE, on_name_owner)
+Gio.bus_own_name_on_connection(sysbus, BUS_NAME, Gio.BusNameOwnerFlags.NONE, None,
+                               lambda *a: (log("lost bus name"), os._exit(1)))
+GLib.MainLoop().run()

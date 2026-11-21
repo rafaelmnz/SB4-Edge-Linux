@@ -1,0 +1,12 @@
+#!/bin/sh
+# sb4edge: pam_exec helper for gdm-fingerprint. Succeeds once if sb4edge-fp-identify matched this user's finger
+# at the GDM user chooser in the last 20 seconds (token written by root in /run/sb4edge/fp-token).
+[ "$PAM_SERVICE" = gdm-fingerprint ] || exit 1
+case "$PAM_USER" in ''|*/*|.*) exit 1 ;; esac
+t=/run/sb4edge/fp-token/$PAM_USER
+[ -f "$t" ] && [ ! -L "$t" ] && [ "$(stat -c %u%a "$t")" = 0600 ] || exit 1
+then=$(cat "$t"); rm -f "$t"
+now=$(cut -d. -f1 /proc/uptime)
+# CLOCK_BOOTTIME ~ /proc/uptime (seconds since boot, including suspend)
+[ -n "$then" ] && [ $((now - then)) -ge 0 ] && [ $((now - then)) -le 20 ] || exit 1
+exit 0

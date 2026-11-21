@@ -14,8 +14,15 @@
 # 3. Ubuntu Dock docking.js: on a fractionally scaled monitor (e.g. 166 %), the pointer at the very screen edge sits
 #    in the last physical pixel row, which the dock's (whole-logical-pixel) area can miss. Whenever the window below
 #    redraws (Firefox does constantly), the shell re-picks and the dock loses hover and hides with the pointer still
-#    on the edge. A pointer within 3 px of the dock's screen edge, inside the dock's width, now counts as hovering;
-#    a 100 ms check hides the dock once it really leaves.
+#    on the edge, or never shows at all. A pointer within 3 px of the screen edge, in line with the dock's icons
+#    (or on the shown dock, 40 px beside it or 70 px above it), now counts as hovering; a 150 ms watch reveals the hidden dock after show-delay
+#    even if its strip never got hover, a pointer back on the icons during the hide delay cancels the hide
+#    (the window below can get the pointer there), and a 100 ms check hides the dock once the pointer really leaves.
+# 4. Ubuntu Dock docking.js: with the top bar hidden (hidetopbar) and the dock hidden, a maximized window covers the
+#    whole monitor, so mutter unredirects it (direct scanout). The dock only blocked that for true fullscreen windows,
+#    so over a maximized Firefox the screen kept switching between scanout and compositing as the dock appeared and
+#    hid: the dock flickered and lost hover (it worked only while a notification, which blocks unredirection, was up).
+#    The dock now blocks unredirection whenever it is on screen.
 import os
 import shutil
 import sys
@@ -24,6 +31,7 @@ EXT = "/usr/share/gnome-shell/extensions"
 DOCK_MARK = "sb4edge-dock-fix"
 APPIND_MARK = "sb4edge-appindicator-fix"
 EDGE_MARK = "sb4edge-dock-edge-hover"
+UNREDIR_MARK = "sb4edge-dock-unredirect"
 
 PATCHES = [
     (f"{EXT}/ubuntu-dock@ubuntu.com/theming.js", DOCK_MARK, [
@@ -57,23 +65,45 @@ PATCHES = [
     (f"{EXT}/ubuntu-dock@ubuntu.com/docking.js", EDGE_MARK, [
         ("                if (this._box.hover || Main.overview.visible)\n",
          "                if (this._box.hover || Main.overview.visible || this._pointerAtDockEdge())\n"),
+        ("        this._box.connect('notify::hover', this._hoverChanged.bind(this));\n",
+         "        this._box.connect('notify::hover', this._hoverChanged.bind(this));\n"
+         "        // " + EDGE_MARK + ": reveal the hidden dock even when its strip never gets hover\n"
+         "        this._edgeDwell = 0;\n"
+         "        this._edgeWatchId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 150, () => {\n"
+         "            this._edgeWatchTick();\n"
+         "            return GLib.SOURCE_CONTINUE;\n"
+         "        });\n"),
         ("    _show() {\n",
          "    // " + EDGE_MARK + ": see /usr/lib/sb4edge/sb4edge-dock-fix (fractional scaling edge row)\n"
          "    _pointerAtDockEdge() {\n"
          "        const m = this._monitor;\n"
-         "        if (!m)\n"
+         "        if (!m || !this._box)\n"
          "            return false;\n"
          "        const [x, y] = global.get_pointer();\n"
-         "        const EDGE = 3;\n"
+         "        const [bx, by] = this._box.get_transformed_position();\n"
+         "        const [bw, bh] = this._box.get_transformed_size();\n"
+         "        const EDGE = 3, MARGIN = 40, ABOVE = 70;\n"
          "        let atEdge;\n"
          "        if (this._position === St.Side.BOTTOM)\n"
-         "            atEdge = y >= m.y + m.height - EDGE && x >= this.x && x < this.x + this.width;\n"
+         "            atEdge = y >= m.y + m.height - EDGE && x >= bx && x < bx + bw;\n"
          "        else if (this._position === St.Side.TOP)\n"
-         "            atEdge = y < m.y + EDGE && x >= this.x && x < this.x + this.width;\n"
+         "            atEdge = y < m.y + EDGE && x >= bx && x < bx + bw;\n"
          "        else if (this._position === St.Side.LEFT)\n"
-         "            atEdge = x < m.x + EDGE && y >= this.y && y < this.y + this.height;\n"
+         "            atEdge = x < m.x + EDGE && y >= by && y < by + bh;\n"
          "        else\n"
-         "            atEdge = x >= m.x + m.width - EDGE && y >= this.y && y < this.y + this.height;\n"
+         "            atEdge = x >= m.x + m.width - EDGE && y >= by && y < by + bh;\n"
+         "        // a shown dock stays up while the pointer is on it, within MARGIN px beside it or ABOVE px over it (a re-pick can lose\n"
+         "        // hover, and a touchpad finger lifting off often jumps the pointer 15-50 px up off the icons)\n"
+         "        if (!atEdge && (this.dockState === State.SHOWN || this.dockState === State.SHOWING)) {\n"
+         "            if (this._position === St.Side.BOTTOM)\n"
+         "                atEdge = x >= bx - MARGIN && x < bx + bw + MARGIN && y >= by - ABOVE && y < m.y + m.height;\n"
+         "            else if (this._position === St.Side.TOP)\n"
+         "                atEdge = x >= bx - MARGIN && x < bx + bw + MARGIN && y >= m.y && y < by + bh + ABOVE;\n"
+         "            else if (this._position === St.Side.LEFT)\n"
+         "                atEdge = y >= by - MARGIN && y < by + bh + MARGIN && x >= m.x && x < bx + bw + ABOVE;\n"
+         "            else\n"
+         "                atEdge = y >= by - MARGIN && y < by + bh + MARGIN && x >= bx - ABOVE && x < m.x + m.width;\n"
+         "        }\n"
          "        if (atEdge && !this._edgeHoverId) {\n"
          "            this._edgeHoverId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, () => {\n"
          "                if (this._box?.hover || this._pointerAtDockEdgeNow())\n"
@@ -92,12 +122,64 @@ PATCHES = [
          "        this._edgeHoverId = id;\n"
          "        return r;\n"
          "    }\n\n"
+         "    _pointerOnDock() {\n"
+         "        const m = this._monitor;\n"
+         "        if (!m || !this._box)\n"
+         "            return false;\n"
+         "        const [x, y] = global.get_pointer();\n"
+         "        const [bx, by] = this._box.get_transformed_position();\n"
+         "        const [bw, bh] = this._box.get_transformed_size();\n"
+         "        if (this._position === St.Side.BOTTOM)\n"
+         "            return x >= bx && x < bx + bw && y >= by && y < m.y + m.height;\n"
+         "        if (this._position === St.Side.TOP)\n"
+         "            return x >= bx && x < bx + bw && y >= m.y && y < by + bh;\n"
+         "        if (this._position === St.Side.LEFT)\n"
+         "            return y >= by && y < by + bh && x >= m.x && x < bx + bw;\n"
+         "        return y >= by && y < by + bh && x >= bx && x < m.x + m.width;\n"
+         "    }\n\n"
+         "    _edgeWatchTick() {\n"
+         "        const [, , mods] = global.get_pointer();\n"
+         "        const buttons = Clutter.ModifierType.BUTTON1_MASK | Clutter.ModifierType.BUTTON2_MASK |\n"
+         "            Clutter.ModifierType.BUTTON3_MASK;\n"
+         "        if (!this.autohideEnabled || this._ignoreHover || Main.overview.visibleTarget ||\n"
+         "            Main.modalCount > 0 || (mods & buttons) ||\n"
+         "            (!DockManager.settings.autohideInFullscreen && this._monitor?.inFullscreen)) {\n"
+         "            this._edgeDwell = 0;\n"
+         "            return;\n"
+         "        }\n"
+         "        // back on the icons during the hide delay: the dock is still drawn there but may not get hover\n"
+         "        // (the window below gets the pointer), so cancel the hide\n"
+         "        if (this.dockState === State.HIDING && this._pointerOnDock()) {\n"
+         "            this._show();\n"
+         "            this._pointerAtDockEdge();\n"
+         "            return;\n"
+         "        }\n"
+         "        if (this.dockState !== State.HIDDEN || !this._pointerAtDockEdgeNow()) {\n"
+         "            this._edgeDwell = 0;\n"
+         "            return;\n"
+         "        }\n"
+         "        this._edgeDwell += 150;\n"
+         "        if (this._edgeDwell < DockManager.settings.showDelay * 1000)\n"
+         "            return;\n"
+         "        this._edgeDwell = 0;\n"
+         "        this._show();\n"
+         "        this._pointerAtDockEdge();   // arms the check that hides it again once the pointer leaves\n"
+         "    }\n\n"
          "    _show() {\n"),
         ("    _onDestroy() {\n",
          "    _onDestroy() {\n"
          "        if (this._edgeHoverId > 0)\n"
          "            GLib.source_remove(this._edgeHoverId);\n"
-         "        this._edgeHoverId = 0;\n"),
+         "        this._edgeHoverId = 0;\n"
+         "        if (this._edgeWatchId)\n"
+         "            GLib.source_remove(this._edgeWatchId);\n"
+         "        this._edgeWatchId = 0;\n"),
+    ]),
+    (f"{EXT}/ubuntu-dock@ubuntu.com/docking.js", UNREDIR_MARK, [
+        ("        case State.SHOWN:\n            return !!this._monitor?.inFullscreen;\n",
+         "        case State.SHOWN:\n"
+         "            // " + UNREDIR_MARK + ": also over maximized windows that cover the monitor (see sb4edge-dock-fix)\n"
+         "            return true;\n"),
     ]),
 ]
 

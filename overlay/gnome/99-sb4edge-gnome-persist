@@ -1,0 +1,3 @@
+// sb4edge: re-apply the GNOME fixes after every package change (dock patches, fingerprint login overlay and PAM line,
+// extension versions after a GNOME upgrade). See /usr/lib/sb4edge/sb4edge-gnome-persist.
+DPkg::Post-Invoke { "if [ -x /usr/lib/sb4edge/sb4edge-gnome-persist ]; then /usr/lib/sb4edge/sb4edge-gnome-persist || true; fi"; };

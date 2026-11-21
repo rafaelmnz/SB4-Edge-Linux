@@ -1,0 +1,11 @@
+[Unit]
+Description=Keep the sb4edge GNOME fixes after upgrades (dock, fingerprint at the user chooser, extensions)
+Before=display-manager.service
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/sb4edge/sb4edge-gnome-persist
+
+[Install]
+WantedBy=graphical.target

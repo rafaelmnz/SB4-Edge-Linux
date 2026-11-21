@@ -46,7 +46,7 @@ Or build it yourself with `build.sh` (below).
 | SD card reader | works | |
 | Battery, charging, fan profiles | works | charge limit (GNOME "Preserve battery health"); the fan runs at full speed if the CPU temperature cannot be read |
 | Windows (BitLocker) partitions | works | opened in Files with the BitLocker password or recovery key |
-| Fingerprint reader | works | EgisTec 1c7a:05a1 in the power button: GNOME login and lock screen, sudo; prints stay on the sensor (SDCP) and can be shared with Windows Hello; relabel fingers in Settings |
+| Fingerprint reader | works | EgisTec 1c7a:05a1 in the power button: GNOME login and lock screen (one touch on the user list picks your account and logs in), sudo; prints stay on the sensor (SDCP) and can be shared with Windows Hello; relabel fingers in Settings |
 
 Known issues: switching a USB-C port from DisplayPort back to USB 3 can fail until reboot; Secure Boot must be off
 (the kernel is not signed). The 14" model shares most of the devicetree but is untested.

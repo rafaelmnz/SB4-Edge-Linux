@@ -1,0 +1,9 @@
+[Unit]
+Description=sb4edge fingerprint login from the GDM user chooser
+After=dbus.service
+
+[Service]
+Type=dbus
+BusName=org.sb4edge.FingerprintIdentify
+ExecStart=/usr/lib/sb4edge/sb4edge-fp-identify
+Restart=on-failure

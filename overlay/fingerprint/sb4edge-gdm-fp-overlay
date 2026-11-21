@@ -1,0 +1,101 @@
+#!/usr/bin/python3 -I
+"""sb4edge: build the GDM greeter overlay for fingerprint login from the user chooser.
+
+Extracts loginDialog.js from the installed gnome-shell (libshell-*.so), adds the hooks that talk to
+sb4edge-fp-identify, and writes /usr/lib/sb4edge/gdm-overlay/loginDialog.js. Only the greeter loads it:
+G_RESOURCE_OVERLAYS is set in /etc/systemd/user/org.gnome.Shell@gdm.service.d/sb4edge-fp.conf.
+Re-run by /etc/apt/apt.conf.d/99-sb4edge-gdm-fp after package updates. If the stock code changed, the overlay
+is deleted and the greeter simply uses the stock file (GLib falls back when an overlay file is missing).
+"""
+import glob
+import os
+import subprocess
+import sys
+
+OUT = "/usr/lib/sb4edge/gdm-overlay/loginDialog.js"
+RES = "/org/gnome/shell/gdm/loginDialog.js"
+MARK = "sb4edge-gdm-fp"
+
+HELPER = '''    // ''' + MARK + ''': identify the finger on the user chooser (see /usr/lib/sb4edge/sb4edge-fp-identify)
+    _sb4edgeFpIdentify(on) {
+        if (!this._sb4edgeFp) {
+            this._sb4edgeFp = {proxy: null, on: false};
+            try {
+                const proxy = Gio.DBusProxy.new_for_bus_sync(Gio.BusType.SYSTEM,
+                    Gio.DBusProxyFlags.DO_NOT_LOAD_PROPERTIES, null,
+                    'org.sb4edge.FingerprintIdentify', '/org/sb4edge/FingerprintIdentify',
+                    'org.sb4edge.FingerprintIdentify', null);
+                proxy.connect('g-signal', (p, sender, name, params) => {
+                    if (name !== 'Identified' || !this._sb4edgeFp.on || !this._userSelectionBox.visible)
+                        return;
+                    const [userName] = params.deep_unpack();
+                    const item = this._userList.getItemFromUserName(userName);
+                    if (item)
+                        this._onUserListActivated(item);
+                });
+                this._sb4edgeFp.proxy = proxy;
+            } catch (e) {
+                logError(e, 'sb4edge-gdm-fp');
+            }
+        }
+        const proxy = this._sb4edgeFp.proxy;
+        if (!proxy || this._sb4edgeFp.on === on)
+            return;
+        this._sb4edgeFp.on = on;
+        try {
+            if (on) {
+                proxy.call('Start', null, Gio.DBusCallFlags.NONE, 5000, null, (p, res) => {
+                    try {
+                        p.call_finish(res);
+                    } catch (e) {
+                        logError(e, 'sb4edge-gdm-fp');
+                    }
+                });
+            } else {
+                // synchronous, so the reader is free before the PAM fingerprint conversation claims it
+                proxy.call_sync('Stop', null, Gio.DBusCallFlags.NONE, 2000, null);
+            }
+        } catch (e) {
+            logError(e, 'sb4edge-gdm-fp');
+        }
+    }
+
+'''
+
+EDITS = [
+    ("    _setUserListExpanded(expanded) {\n",
+     "    _setUserListExpanded(expanded) {\n        this._sb4edgeFpIdentify(expanded);\n"),
+    ("    _onUserListActivated(activatedItem) {\n",
+     "    _onUserListActivated(activatedItem) {\n        this._sb4edgeFpIdentify(false);\n"),
+    ("    _hideUserList() {\n", HELPER + "    _hideUserList() {\n"),
+]
+
+
+def drop(reason):
+    print(f"{MARK}: {reason}; greeter uses the stock login dialog", file=sys.stderr)
+    try:
+        os.remove(OUT)
+    except FileNotFoundError:
+        pass
+    sys.exit(0)
+
+
+libs = sorted(glob.glob("/usr/lib/gnome-shell/libshell-*.so") + glob.glob("/usr/lib/*/gnome-shell/libshell-*.so"))
+if not libs:
+    drop("libshell not found")
+try:
+    src = subprocess.run(["gresource", "extract", libs[-1], RES], capture_output=True, text=True,
+                         check=True).stdout
+except (OSError, subprocess.CalledProcessError) as err:
+    drop(f"cannot extract {RES}: {err}")
+for old, new in EDITS:
+    if src.count(old) != 1:
+        drop(f"loginDialog.js layout changed (looked for {old.strip()!r})")
+    src = src.replace(old, new)
+os.makedirs(os.path.dirname(OUT), exist_ok=True)
+tmp = OUT + ".tmp"
+with open(tmp, "w", encoding="utf-8") as f:
+    f.write(src)
+os.chmod(tmp, 0o644)
+os.replace(tmp, OUT)
+print(f"{MARK}: wrote {OUT} from {libs[-1]} (used by the greeter from its next start)")

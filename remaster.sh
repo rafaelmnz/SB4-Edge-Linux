@@ -291,9 +291,17 @@ install -Dm644 /work/overlay/gnome/99_sb4edge.gschema.override "$B/usr/share/gli
 install -Dm755 /work/overlay/gnome/sb4edge-dock-fix "$B/usr/lib/sb4edge/sb4edge-dock-fix"
 install -Dm644 /work/overlay/gnome/99-sb4edge-dock-fix "$B/etc/apt/apt.conf.d/99-sb4edge-dock-fix"
 chroot "$B" /usr/lib/sb4edge/sb4edge-dock-fix
-for f in ubuntu-dock@ubuntu.com/theming.js:sb4edge-dock-fix ubuntu-appindicators@ubuntu.com/settingsManager.js:sb4edge-appindicator-fix; do
+for f in ubuntu-dock@ubuntu.com/theming.js:sb4edge-dock-fix ubuntu-appindicators@ubuntu.com/settingsManager.js:sb4edge-appindicator-fix ubuntu-dock@ubuntu.com/docking.js:sb4edge-dock-edge-hover ubuntu-dock@ubuntu.com/docking.js:sb4edge-dock-unredirect; do
 	X="$B/usr/share/gnome-shell/extensions/${f%%:*}"; [ ! -f "$X" ] || grep -q "${f#*:}" "$X" || { echo "extension patch failed: $f"; exit 1; }
 done
+# Keeps these GNOME fixes after package and release upgrades: re-runs the dock patches and the login-screen
+# fingerprint overlay, restores the PAM line, and adds a new GNOME Shell version to sb4edge's own extensions so a
+# GNOME upgrade doesn't silently disable them. After every dpkg run (apt hook) and at every boot before GDM.
+install -Dm755 /work/overlay/gnome/sb4edge-gnome-persist "$B/usr/lib/sb4edge/sb4edge-gnome-persist"
+install -Dm644 /work/overlay/gnome/sb4edge-gnome-persist.service "$B/usr/lib/systemd/system/sb4edge-gnome-persist.service"
+install -Dm644 /work/overlay/gnome/99-sb4edge-gnome-persist "$B/etc/apt/apt.conf.d/99-sb4edge-gnome-persist"
+mkdir -p "$B/etc/systemd/system/graphical.target.wants"
+ln -sf /usr/lib/systemd/system/sb4edge-gnome-persist.service "$B/etc/systemd/system/graphical.target.wants/sb4edge-gnome-persist.service"
 chroot "$B" glib-compile-schemas /usr/share/glib-2.0/schemas
 # Panel and keyboard backlight kept across boots (overlay/backlight): at shutdown the login screen resets the brightness to the
 # value it cached at boot before systemd-backlight saves it, so every boot started at that value. A service records
@@ -472,6 +480,17 @@ ln -sf /usr/lib/systemd/system/sb4edge-fingerprint-import.service $M/etc/systemd
 install -Dm644 /work/overlay/fingerprint/sb4edge-fingerprint.pam-config $M/usr/share/pam-configs/sb4edge-fingerprint
 chroot $M env DEBIAN_FRONTEND=noninteractive pam-auth-update --enable sb4edge-fingerprint
 grep -q sb4edge-fingerprint-import $M/etc/pam.d/common-session
+# Fingerprint login straight from the GDM user chooser: sb4edge-fp-identify (root, D-Bus activated) verifies the
+# finger against each enrolled user while the greeter's user list is shown; the greeter (loginDialog.js overlay
+# built by sb4edge-gdm-fp-overlay, loaded only by the greeter's shell) selects the matching user, and the
+# gdm-fingerprint PAM stack accepts that fresh one-time match (sb4edge-fp-token), so one touch logs in.
+for f in sb4edge-fp-identify sb4edge-fp-token sb4edge-gdm-fp-overlay; do install -Dm755 /work/overlay/fingerprint/$f $M/usr/lib/sb4edge/$f; done
+install -Dm644 /work/overlay/fingerprint/org.sb4edge.FingerprintIdentify.conf $M/usr/share/dbus-1/system.d/org.sb4edge.FingerprintIdentify.conf
+install -Dm644 /work/overlay/fingerprint/org.sb4edge.FingerprintIdentify.dbus-service $M/usr/share/dbus-1/system-services/org.sb4edge.FingerprintIdentify.service
+install -Dm644 /work/overlay/fingerprint/sb4edge-fp-identify.service $M/usr/lib/systemd/system/sb4edge-fp-identify.service
+install -Dm644 /work/overlay/fingerprint/org.gnome.Shell@gdm-sb4edge-fp.conf "$M/usr/lib/systemd/user/org.gnome.Shell@gdm.service.d/sb4edge-fp.conf"
+chroot $M /usr/lib/sb4edge/sb4edge-gnome-persist
+grep -q sb4edge-fp-token $M/etc/pam.d/gdm-fingerprint || { echo "gdm-fingerprint: user-chooser token line missing"; exit 1; }
 install -Dm644 /work/extra/libcamera/ov02c10.yaml $M/usr/share/libcamera/ipa/simple/ov02c10.yaml
 install -Dm644 /work/extra/libcamera/configuration.yaml $M/usr/share/libcamera/configuration.yaml
 install -Dm644 /work/extra/libcamera/52-sb4edge-hide-raw-camss.conf $M/usr/share/wireplumber/wireplumber.conf.d/52-sb4edge-hide-raw-camss.conf

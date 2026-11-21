@@ -125,6 +125,7 @@ off).
   ```
 
   From then on the same finger unlocks the login screen, the lock screen and `sudo` (the password always works too).
+  On the login screen's user list a touch is enough: Ubuntu finds whose finger it is, picks that account and logs in.
   The touch is what proves the print is yours: the chip does not record which Windows user enrolled a print, so
   Ubuntu never hands a Windows Hello print to an account without it. At start-up and login it only reports new ones.
   - **Do not enroll the same finger in Ubuntu's Settings** as well: each system then deletes the other's copy.
