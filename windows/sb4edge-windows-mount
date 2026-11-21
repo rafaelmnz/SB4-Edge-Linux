@@ -5,6 +5,9 @@
 #   sb4edge-windows-mount stop                unmount everything
 #   sb4edge-windows-mount unlock-folder PATH  make PATH and everything under it writable (kept across reboots)
 #   sb4edge-windows-mount lock-folder PATH    make it read-only again
+#   sb4edge-windows-mount rename-folder PATH NEWNAME / delete-folder PATH
+#                                             rename / permanently delete an unlocked folder itself (its entry is
+#                                             in the locked parent, so Files can't); it stays unlocked when renamed
 #   sb4edge-windows-mount status
 # unlock-folder/lock-folder run through pkexec (password prompt); GNOME Files offers them in the right-click menu
 # ("Unlock folder" / "Lock folder", nautilus-python extension sb4edge-unlock-folder.py). The unlocked folders are
@@ -18,8 +21,9 @@
 #   USER_NAME=...     whose Files shows it (/run/media/USER_NAME/UUID)
 #
 # How: ntfs-3g mounts the volume read-write at $RW (root-only, not reachable by users); $MAIN (the /run/media path
-# Files shows as the drive) is a read-only bind of it, and each unlocked folder is a read-write bind on top, hidden
-# from the Files sidebar (x-gvfs-hide). A hibernated Windows (Fast Startup) is mounted read-only as a whole.
+# Files shows as the drive) is a read-only bind of it, and each unlocked folder is a read-write mount on top, hidden
+# from the Files sidebar (x-gvfs-hide); it is a bindfs mount so it has its own device number (GNOME's file layer
+# judges read-only by device). A hibernated Windows (Fast Startup) is mounted read-only as a whole.
 set -u
 ENABLED=yes
 UUID=
@@ -55,13 +59,25 @@ log() { echo "sb4edge-windows-mount: $*"; logger -t sb4edge-windows-mount -- "$*
 mounted() { mountpoint -q "$1" 2>/dev/null; }
 hibernated() { findmnt -no OPTIONS "$RW" 2>/dev/null | grep -qw ro; }
 
+notify_files() {   # notify_files REL: make file managers re-read the folder's (now changed) writability
+	# Unlocking/locking only changes the mount over the folder, not the folder itself, so GNOME Files gets no change
+	# event, keeps its cached read-only state (no "New Folder") and could crash on the stale view. Touching the
+	# folder through the root-only read-write mount (same inode) and putting its time back sends that event.
+	d="$RW/$1"; [ "$1" = . ] && d="$RW"
+	t=$(stat -c %.9Y "$d" 2>/dev/null) || return 0
+	touch -c "$d" 2>/dev/null && touch -c -m -d "@$t" "$d" 2>/dev/null
+	return 0
+}
+
 bind_rw() {   # bind_rw REL
 	if [ "$1" = . ]; then   # the whole volume
 		mount -o remount,bind,rw,nosuid,nodev "$MAIN" && log "unlocked: whole volume"; return
 	fi
 	[ -d "$RW/$1" ] || { log "not a folder on the volume: $1"; return 1; }
 	mounted "$MAIN/$1" && return 0
-	mount --bind -o x-gvfs-hide "$RW/$1" "$MAIN/$1" && log "unlocked: $1"
+	# bindfs (its own FUSE filesystem), not mount --bind: a bind mount keeps the read-only drive's device number,
+	# so GIO/GNOME Files took the folder for read-only ("destination is read-only", then Files crashed)
+	mount -t fuse.bindfs -o allow_other,x-gvfs-hide "$RW/$1" "$MAIN/$1" && log "unlocked: $1"
 }
 
 start() {
@@ -114,6 +130,7 @@ unlock_folder() {
 	hibernated && { log "Windows is hibernated (Fast Startup): the volume stays read-only"; exit 1; }
 	r=$(rel_of "${1:-}") || { log "not on the Windows volume: ${1:-}"; exit 2; }
 	bind_rw "$r" || exit 1
+	notify_files "$r"
 	mkdir -p "$(dirname "$LIST")"; touch "$LIST"
 	grep -qxF -- "$r" "$LIST" || printf '%s\n' "$r" >> "$LIST"
 	chmod 644 "$LIST"
@@ -129,7 +146,51 @@ lock_folder() {
 		awk -v r="$r" '$0 != r && index($0, r "/") != 1' "$LIST" > "$LIST.new" && mv "$LIST.new" "$LIST"
 	fi
 	[ "$r" = . ] && mount -o remount,bind,ro,nosuid,nodev "$MAIN"
+	notify_files "$r"
 	log "locked: $r"
+}
+
+unlock_point() {   # unlock_point PATH: print REL if PATH is itself an unlocked folder (not the drive root)
+	r=$(rel_of "${1:-}") || { log "not on the Windows volume: ${1:-}" >&2; exit 2; }
+	[ "$r" != . ] && [ -f "$LIST" ] && grep -qxF -- "$r" "$LIST" || { log "not an unlocked folder: $r" >&2; exit 2; }
+	echo "$r"
+}
+
+unmount_tree() {   # unmount_tree REL: unmount the folder and anything unlocked inside it
+	findmnt -ln -o TARGET | grep -E "^$MAIN/" | sort -r | while IFS= read -r m; do
+		case "$m" in "$MAIN/$1"|"$MAIN/$1"/*) umount "$m" 2>/dev/null || { log "in use, close what uses it and try again: $m"; exit 1; } ;; esac
+	done
+}
+
+remount_tree() {   # remount_tree REL: unlock again every listed folder at or inside REL
+	while IFS= read -r p; do
+		case "$p" in "$1"|"$1"/*) bind_rw "$p" ;; esac
+	done < "$LIST"
+}
+
+rename_folder() {   # the folder's own entry lives in its (locked) parent, so the rename is done here
+	r=$(unlock_point "${1:-}") || exit $?
+	new=${2:-}
+	case "$new" in ""|.|..|*/*) log "invalid name: $new"; exit 2 ;; esac
+	parent=$(dirname -- "$r"); [ "$parent" = . ] && nr=$new || nr=$parent/$new
+	[ "$nr" = "$r" ] && exit 0
+	[ -e "$RW/$nr" ] && { log "already exists: $nr"; exit 1; }
+	unmount_tree "$r" || exit 1
+	if ! mv -- "$RW/$r" "$RW/$nr"; then log "rename failed: $r"; remount_tree "$r"; exit 1; fi
+	awk -v r="$r" -v n="$nr" '{ if ($0 == r) print n; else if (index($0, r "/") == 1) print n substr($0, length(r) + 1); else print }' \
+		"$LIST" > "$LIST.new" && mv "$LIST.new" "$LIST" && chmod 644 "$LIST"
+	remount_tree "$nr"
+	notify_files "$nr"
+	log "renamed: $r -> $nr"
+}
+
+delete_folder() {   # permanent: the read-only drive has no Trash (GNOME Files asks first)
+	r=$(unlock_point "${1:-}") || exit $?
+	unmount_tree "$r" || exit 1
+	if ! rm -rf -- "${RW:?}/$r"; then log "delete failed (partly deleted?): $r"; remount_tree "$r"; exit 1; fi
+	awk -v r="$r" '$0 != r && index($0, r "/") != 1' "$LIST" > "$LIST.new" && mv "$LIST.new" "$LIST" && chmod 644 "$LIST"
+	notify_files "$(dirname -- "$r")"
+	log "deleted: $r"
 }
 
 status() {
@@ -143,6 +204,8 @@ start) start ;;
 stop) stop ;;
 unlock-folder) unlock_folder "${2:-}" ;;
 lock-folder) lock_folder "${2:-}" ;;
+rename-folder) rename_folder "${2:-}" "${3:-}" ;;
+delete-folder) delete_folder "${2:-}" ;;
 status) status ;;
-*) echo "usage: $0 start|stop|unlock-folder PATH|lock-folder PATH|status" >&2; exit 2 ;;
+*) echo "usage: $0 start|stop|unlock-folder PATH|lock-folder PATH|rename-folder PATH NEWNAME|delete-folder PATH|status" >&2; exit 2 ;;
 esac

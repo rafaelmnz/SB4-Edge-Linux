@@ -3,7 +3,8 @@
 # writable after a password prompt (pkexec), and it stays unlocked across reboots until "Lock folder".
 # The menu follows the saved list of unlocked folders (/var/lib/sb4edge/windows-unlocked, kept by the helper),
 # cross-checked with the live mounts, so an unlocked folder offers "Lock folder" and a locked one "Unlock folder";
-# a folder inside an unlocked one offers to lock that parent.
+# a folder inside an unlocked one offers to lock that parent. An unlocked folder also offers "Rename Folder…" and
+# "Delete Folder": its own entry lives in the locked parent folder, so Files itself can't rename or delete it.
 import os
 
 from gi.repository import GObject, Gio, GLib, Nautilus
@@ -56,7 +57,47 @@ def _unlocked(root):
 
 
 class UnlockFolderMenu(GObject.GObject, Nautilus.MenuProvider):
-    def _run(self, action, path):
+    def __init__(self):
+        super().__init__()
+        # Menu items handed to Files are kept referenced here for a while: dropping the Python wrappers while Files
+        # tears its menu down (the folder becomes a mount point when unlocked, and Files rebuilds its view) made
+        # GLib warn about finalized objects and Files crash (SIGSEGV in gtk_accessible_update_state).
+        self._recent = []
+
+    def _run_later(self, action, path):
+        # start only once the menu has closed, so the folder never changes under an open menu
+        GLib.timeout_add(250, lambda: (self._start(action, path), GLib.SOURCE_REMOVE)[1])
+
+    def _start(self, action, path):
+        name = os.path.basename(path)
+        if action == "rename-folder":
+            self._ask(["zenity", "--entry", "--title=Rename Folder", f"--text=New name for \u201c{name}\u201d:",
+                       f"--entry-text={name}"],
+                      lambda out: out.strip() and out.strip() != name and self._run(action, path, out.strip()))
+        elif action == "delete-folder":
+            self._ask(["zenity", "--question", "--icon=dialog-warning", "--title=Delete Folder",
+                       f"--text=Permanently delete \u201c{name}\u201d and everything in it?\n\n"
+                       "The Windows drive has no Trash: this can't be undone.", "--ok-label=Delete"],
+                      lambda out: self._run(action, path))
+        else:
+            self._run(action, path)
+
+    def _ask(self, cmd, then):
+        """Run a zenity dialog; call then(stdout) if the user confirmed."""
+        def done(proc, res, _data=None):
+            try:
+                _ok, out, _err = proc.communicate_utf8_finish(res)
+            except GLib.Error:
+                return
+            if proc.get_exit_status() == 0:
+                then(out or "")
+        try:
+            proc = Gio.Subprocess.new(cmd, Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_SILENCE)
+        except GLib.Error:
+            return
+        proc.communicate_utf8_async(None, None, done, None)
+
+    def _run(self, action, path, *extra):
         def done(proc, res, _data=None):
             try:
                 _ok, _out, err = proc.communicate_utf8_finish(res)
@@ -65,13 +106,15 @@ class UnlockFolderMenu(GObject.GObject, Nautilus.MenuProvider):
             if proc.get_exit_status() not in (0, 126, 127):   # 126/127: password prompt cancelled
                 msg = (err or "").strip().splitlines()[-1:] or ["failed"]
                 Gio.Subprocess.new(["notify-send", "-i", "dialog-error", "Windows drive", msg[0]], 0)
-        proc = Gio.Subprocess.new(["pkexec", HELPER, action, path],
+        proc = Gio.Subprocess.new(["pkexec", HELPER, action, path, *extra],
                                   Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE)
         proc.communicate_utf8_async(None, None, done, None)
 
     def _item(self, name, label, tip, action, path):
         item = Nautilus.MenuItem(name=name, label=label, tip=tip)
-        item.connect("activate", lambda *_: self._run(action, path))
+        item.connect("activate", lambda *_: self._run_later(action, path))
+        self._recent.append(item)
+        del self._recent[:-64]
         return item
 
     def get_file_items(self, files):
@@ -85,8 +128,15 @@ class UnlockFolderMenu(GObject.GObject, Nautilus.MenuProvider):
         rel = os.path.relpath(path, root)
         unlocked = _unlocked(root)
         if rel in unlocked:
-            return [self._item("Sb4edge::LockFolder", "Lock folder", "Make this folder read-only again",
-                               "lock-folder", path)]
+            items = [self._item("Sb4edge::LockFolder", "Lock folder", "Make this folder read-only again",
+                                "lock-folder", path)]
+            if rel != ".":
+                items += [self._item("Sb4edge::RenameFolder", "Rename Folder\u2026",
+                                     "Rename this unlocked folder (asks for your password)", "rename-folder", path),
+                          self._item("Sb4edge::DeleteFolder", "Delete Folder",
+                                     "Permanently delete this unlocked folder (no Trash on the Windows drive)",
+                                     "delete-folder", path)]
+            return items
         parents = [u for u in unlocked if u == "." or rel.startswith(u + "/")]
         if parents:
             parent = max(parents, key=len)

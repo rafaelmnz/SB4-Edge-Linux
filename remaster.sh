@@ -113,7 +113,7 @@ export DEBIAN_FRONTEND=noninteractive FK_MACHINE=none
 mkdir -p /tmp/net-sources; cp /etc/apt/sources.list.d/ubuntu.sources /tmp/net-sources/
 APT='-o Dir::Etc::sourcelist=/dev/null -o Dir::Etc::sourceparts=/tmp/net-sources'
 apt-get \$APT update
-apt-get \$APT install -y --no-install-recommends curl openssh-server nvtop gstreamer1.0-plugins-bad libopenh264-8 systemd-ukify stubble python3-pefile ddcutil libprotobuf-c1 fake-hwclock python3-nautilus ntfs-3g
+apt-get \$APT install -y --no-install-recommends curl openssh-server nvtop gstreamer1.0-plugins-bad libopenh264-8 systemd-ukify stubble python3-pefile ddcutil libprotobuf-c1 fake-hwclock python3-nautilus ntfs-3g bindfs zenity
 systemctl enable ssh.service
 apt-get clean; rm -rf /tmp/net-sources
 "

@@ -118,7 +118,9 @@ off).
 - **Windows drive**: Ubuntu mounts the Windows system drive **read-only**, so nothing on the Linux side can damage
   Windows by accident. To write somewhere on it, right-click the folder in Files → *Unlock folder* (asks for your
   password); it and everything inside stay writable, also after a restart, until you right-click it → *Lock folder*.
-  Inside an unlocked folder the menu offers to lock that parent. Sync folders (Nextcloud, OneDrive, Syncthing...)
+  Inside an unlocked folder the menu offers to lock that parent. An unlocked folder's own menu also has *Rename
+  Folder…* and *Delete Folder* (its name lives in the locked folder above it; deleting is permanent, the Windows
+  drive has no Trash). Sync folders (Nextcloud, OneDrive, Syncthing...)
   pointing at the Windows drive need their folder unlocked. `ENABLED=no` in `/etc/default/sb4edge-windows-mount`
   mounts the drive the normal way (writable). If Windows was shut down with Fast Startup (hibernated), the whole
   drive stays read-only until Windows is shut down fully (Shift + Shut down).
