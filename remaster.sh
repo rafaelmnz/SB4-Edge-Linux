@@ -492,14 +492,15 @@ grep -q sb4edge-fingerprint-import $M/etc/pam.d/common-session
 # Fingerprint login straight from the GDM user chooser: sb4edge-fp-identify (root, D-Bus activated) verifies the
 # finger against each enrolled user while the greeter's user list is shown; the greeter (loginDialog.js overlay
 # built by sb4edge-gdm-fp-overlay, loaded only by the greeter's shell) selects the matching user, and the
-# gdm-fingerprint PAM stack accepts that fresh one-time match (sb4edge-fp-token), so one touch logs in.
+# GDM login (gdm-password, which on Ubuntu also does the fingerprint check) accepts that fresh one-time match
+# (sb4edge-fp-token), so one touch logs in.
 for f in sb4edge-fp-identify sb4edge-fp-token sb4edge-gdm-fp-overlay; do install -Dm755 /work/overlay/fingerprint/$f $M/usr/lib/sb4edge/$f; done
 install -Dm644 /work/overlay/fingerprint/org.sb4edge.FingerprintIdentify.conf $M/usr/share/dbus-1/system.d/org.sb4edge.FingerprintIdentify.conf
 install -Dm644 /work/overlay/fingerprint/org.sb4edge.FingerprintIdentify.dbus-service $M/usr/share/dbus-1/system-services/org.sb4edge.FingerprintIdentify.service
 install -Dm644 /work/overlay/fingerprint/sb4edge-fp-identify.service $M/usr/lib/systemd/system/sb4edge-fp-identify.service
 install -Dm644 /work/overlay/fingerprint/org.gnome.Shell@gdm-sb4edge-fp.conf "$M/usr/lib/systemd/user/org.gnome.Shell@gdm.service.d/sb4edge-fp.conf"
 chroot $M /usr/lib/sb4edge/sb4edge-gnome-persist
-grep -q sb4edge-fp-token $M/etc/pam.d/gdm-fingerprint || { echo "gdm-fingerprint: user-chooser token line missing"; exit 1; }
+for f in gdm-password gdm-fingerprint; do grep -q sb4edge-fp-token $M/etc/pam.d/$f || { echo "$f: user-chooser token line missing"; exit 1; }; done
 install -Dm644 /work/extra/libcamera/ov02c10.yaml $M/usr/share/libcamera/ipa/simple/ov02c10.yaml
 install -Dm644 /work/extra/libcamera/configuration.yaml $M/usr/share/libcamera/configuration.yaml
 install -Dm644 /work/extra/libcamera/52-sb4edge-hide-raw-camss.conf $M/usr/share/wireplumber/wireplumber.conf.d/52-sb4edge-hide-raw-camss.conf

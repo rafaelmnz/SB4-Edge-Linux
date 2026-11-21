@@ -5,7 +5,9 @@ Run after every dpkg run (/etc/apt/apt.conf.d/99-sb4edge-gnome-persist) and at e
 (sb4edge-gnome-persist.service). Idempotent; each step reports and carries on if it can't apply.
   1. Ubuntu Dock / AppIndicators patches (sb4edge-dock-fix).
   2. Login screen overlay for fingerprint login at the user chooser (sb4edge-gdm-fp-overlay), and its line in
-     /etc/pam.d/gdm-fingerprint (a conffile a release upgrade may replace).
+     /etc/pam.d/gdm-password and gdm-fingerprint (conffiles a release upgrade may replace).
+     In gdm-password, Ubuntu's common-auth pam_fprintd is skipped so GDM's background fingerprint service gets
+     the reader (fingerprint then works on the lock screen even with text typed in the password field).
   3. sb4edge's own GNOME Shell extensions (and the patched hidetopbar) declare the running GNOME Shell version, so a
      GNOME major upgrade doesn't silently disable them (the shell only loads extensions listing its version; one
      that really breaks is shown as an error and the shell keeps running).
@@ -18,7 +20,6 @@ import subprocess
 import sys
 
 LIB = "/usr/lib/sb4edge"
-PAM = "/etc/pam.d/gdm-fingerprint"
 PAM_LINE = "auth\t[success=done default=ignore]\tpam_exec.so quiet quiet_log /usr/lib/sb4edge/sb4edge-fp-token"
 OWN_EXTENSIONS = ["hidetopbar-multimonitor@linuxitos.local", "*@sb4edge"]
 
@@ -34,34 +35,73 @@ def run(cmd):
             log(line)
 
 
+# PAM files and the line our token check goes before: gdm-password is what Ubuntu's login screen actually uses for
+# fingerprint (common-auth has pam_fprintd); gdm-fingerprint is kept for other setups.
+PAM_TARGETS = [("/etc/pam.d/gdm-password", r"^@include\s+common-auth\b.*$"),
+               ("/etc/pam.d/gdm-fingerprint", r"^auth\s+required\s+pam_fprintd\.so.*$")]
+
+
+def write_pam(path, text):
+    tmp = path + ".sb4edge-tmp"
+    with open(tmp, "w") as f:
+        f.write(text)
+    os.chmod(tmp, os.stat(path).st_mode & 0o7777)
+    os.replace(tmp, path)
+
+
 def pam_line():
+    if not os.access(f"{LIB}/sb4edge-fp-token", os.X_OK):
+        return
+    for path, anchor in PAM_TARGETS:
+        try:
+            src = open(path).read()
+        except FileNotFoundError:
+            continue
+        if PAM_LINE in src:
+            continue
+        old = re.search(r"^auth\s.*sb4edge-fp-token.*$", src, re.M)
+        if old:                               # an older form of our line: replace it
+            write_pam(path, src[:old.start()] + PAM_LINE + src[old.end():])
+            log(f"{path}: user-chooser token check updated")
+            continue
+        m = re.search(anchor, src, re.M)
+        if not m:
+            log(f"{path}: expected line not found, not adding the user-chooser token check")
+            continue
+        write_pam(path, src[:m.start()] + "# sb4edge: one-time match from the GDM user chooser (sb4edge-fp-identify)\n"
+                  + PAM_LINE + "\n" + src[m.start():])
+        log(f"{path}: user-chooser token check added")
+
+
+SKIP_LINE = "auth\t[success=1 default=ignore]\tpam_permit.so\t# sb4edge-skip-fprintd"
+
+
+def pam_skip_fprintd():
+    """In gdm-password, skip the pam_fprintd that Ubuntu puts first in common-auth.
+
+    Otherwise it and GDM's background fingerprint service (gdm-fingerprint) both claim the reader when a login or
+    lock prompt starts; it usually wins, waits 10 s, and gives up for good once you type, so the lock screen
+    ignored the finger while text was in the password field. Only added while common-auth starts with
+    pam_fprintd (the skip jumps over exactly one module)."""
+    path = "/etc/pam.d/gdm-password"
     try:
-        src = open(PAM).read()
+        src = open(path).read()
+        common = open("/etc/pam.d/common-auth").read()
     except FileNotFoundError:
         return
-    if PAM_LINE in src or not os.access(f"{LIB}/sb4edge-fp-token", os.X_OK):
-        return
-    old = re.search(r"^auth\s.*sb4edge-fp-token.*$", src, re.M)
-    if old:                                   # an older form of our line: replace it
-        new = src[:old.start()] + PAM_LINE + src[old.end():]
-        tmp = PAM + ".sb4edge-tmp"
-        with open(tmp, "w") as f:
-            f.write(new)
-        os.chmod(tmp, os.stat(PAM).st_mode & 0o7777)
-        os.replace(tmp, PAM)
-        log(f"{PAM}: user-chooser token check updated")
-        return
-    m = re.search(r"^auth\s+required\s+pam_fprintd\.so.*$", src, re.M)
-    if not m:
-        log(f"{PAM}: no pam_fprintd line, not adding the user-chooser token check")
-        return
-    new = src[:m.start()] + "# sb4edge: one-time match from the GDM user chooser (sb4edge-fp-identify)\n" + PAM_LINE + "\n" + src[m.start():]
-    tmp = PAM + ".sb4edge-tmp"
-    with open(tmp, "w") as f:
-        f.write(new)
-    os.chmod(tmp, os.stat(PAM).st_mode & 0o7777)
-    os.replace(tmp, PAM)
-    log(f"{PAM}: user-chooser token check added back")
+    auth = [l for l in common.splitlines() if re.match(r"^auth\s", l)]
+    first_is_fprintd = bool(auth) and "pam_fprintd.so" in auth[0]
+    has = "sb4edge-skip-fprintd" in src
+    if first_is_fprintd and not has:
+        m = re.search(r"^@include\s+common-auth\b.*$", src, re.M)
+        if not m:
+            return
+        write_pam(path, src[:m.start()] + "# sb4edge: leave the fingerprint reader to gdm-fingerprint (see sb4edge-gnome-persist)\n"
+                  + SKIP_LINE + "\n" + src[m.start():])
+        log(f"{path}: skips common-auth's pam_fprintd")
+    elif has and not first_is_fprintd:          # common-auth changed: the skip would hit the wrong module
+        write_pam(path, re.sub(r"^# sb4edge: leave the fingerprint reader.*\n", "", re.sub(r"^.*sb4edge-skip-fprintd.*\n", "", src, flags=re.M), flags=re.M))
+        log(f"{path}: common-auth no longer starts with pam_fprintd, skip removed")
 
 
 def shell_major():
@@ -104,4 +144,5 @@ if os.geteuid() != 0:
 run(f"{LIB}/sb4edge-dock-fix")
 run(f"{LIB}/sb4edge-gdm-fp-overlay")
 pam_line()
+pam_skip_fprintd()
 extension_versions()

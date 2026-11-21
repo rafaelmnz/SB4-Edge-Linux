@@ -178,7 +178,7 @@ def write_token(user):
     os.chmod(TOKEN_DIR, 0o700)
     path = os.path.join(TOKEN_DIR, user)
     fd = os.open(path + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    os.write(fd, f"{time.clock_gettime(time.CLOCK_BOOTTIME):.0f}\n".encode())
+    os.write(fd, f"{int(time.clock_gettime(time.CLOCK_BOOTTIME))}\n".encode())   # whole seconds, truncated like /proc/uptime
     os.close(fd)
     os.replace(path + ".tmp", path)
 
