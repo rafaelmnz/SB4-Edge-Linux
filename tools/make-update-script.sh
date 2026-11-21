@@ -1,7 +1,7 @@
 #!/bin/sh
 # Builds out/sb4edge-update.sh: a single script that brings an installed SB4-Edge-Linux release up to date with the
 # fixes made since that release, without reinstalling. The fixed files are embedded (gzip + base64) with their
-# SHA-256, so the script needs no network access. Build first: ./build.sh ssc usbc libfprint
+# SHA-256, so the script needs no network access (except to install missing packages for the Windows drive item). Build first: ./build.sh ssc usbc libfprint
 #   tools/make-update-script.sh
 set -eu
 cd "$(dirname "$0")/.."
@@ -26,7 +26,7 @@ emb() { # emb VAR file
 cat <<EOF
 #!/bin/sh
 # SB4-Edge-Linux update for an installed system (release v2026.11.16-27.04.2), from commit $REV.
-# Run once:  sudo sh sb4edge-update.sh
+# Run once:  sudo sh sb4edge-update.sh   (then log out and back in, or restart for the boot/Wi-Fi/Windows items)
 # Originals are kept in /var/lib/sb4edge/update-backup/<date>/. Running it again changes nothing.
 #
 # 2026-11-18, crashes found on an installed laptop:
@@ -51,6 +51,22 @@ cat <<EOF
 #     an NPU page (load, temperature, firmware state) plus Oryon CPU temperature and core count.
 # 11. Video decoder (Iris): fixes a crash report while seeking in videos, and adds what VA-API needs, so apps using
 #     Ubuntu's qcom-va-driver (ffmpeg, Citrix, ...) decode H.264/HEVC/AV1 in hardware (from the next boot).
+# 2026-11-20/21:
+# 12. Wi-Fi driver: Resources and "iw" froze for seconds at a time once one firmware statistics request had timed out
+#     (ath12k waited 3 s on every later one). Fixed module, used from the next boot.
+# 13. Boot: no "Loading Linux ..." text between rEFInd and the boot splash, no blinking cursor.
+# 14. GNOME extensions of the reference laptop, installed system-wide and on by default (unless you chose your own):
+#     auto-hiding top bar on every monitor, top bar organizer, weather, screenshot without the selection box, OCR
+#     from a screen area, RustDesk window helper, and overview: Esc / a click on empty space closes it and a click on
+#     a neighbouring workspace switches to it. Ubuntu's snap search add-on (broke Esc in the overview) is turned off.
+# 15. Ubuntu Dock: no more flicker or hiding by itself over maximized windows (Firefox) on the 166 % panel; reveals
+#     reliably at the screen edge and forgives small pointer jumps.
+# 16. Fingerprint: one touch on the login screen's user list picks your account and logs in; the lock screen takes
+#     a finger even with text in the password field.
+# 17. Windows drive read-only, with "Unlock folder" / "Lock folder" (and Rename / Delete for unlocked folders) in
+#     GNOME Files' right-click menu, from the next boot. ENABLED=no in /etc/default/sb4edge-windows-mount keeps it
+#     writable as before.
+# 18. These GNOME fixes are re-applied after package and release upgrades (sb4edge-gnome-persist).
 set -eu
 KREL=$KREL
 KVER=$KVER
@@ -68,6 +84,31 @@ emb GIR "$GIR"
 emb RES "$RES"
 emb NPU out/sb4_cdsp_stats.ko
 emb IRIS out/qcom-iris.ko
+emb ATH out/ath12k.ko
+emb GKERN overlay/sleep/zz-sb4edge-kernel.cfg
+emb GREFI refind/zz-sb4edge-refind.cfg
+emb DOCK overlay/gnome/sb4edge-dock-fix
+emb DOCKH overlay/gnome/99-sb4edge-dock-fix
+emb PERS overlay/gnome/sb4edge-gnome-persist
+emb PERSS overlay/gnome/sb4edge-gnome-persist.service
+emb PERSH overlay/gnome/99-sb4edge-gnome-persist
+emb EXTO overlay/gnome/90-sb4edge-extensions.gschema.override
+i=0; EXTS=
+for z in overlay/gnome/extensions/*.zip; do
+	i=$((i + 1)); emb "EXT$i" "$z"; EXTS="$EXTS EXT$i:$(basename "$z" .zip)"
+done
+echo "EXTS='$EXTS'"
+emb FPID overlay/fingerprint/sb4edge-fp-identify
+emb FPTOK overlay/fingerprint/sb4edge-fp-token
+emb FPOVL overlay/fingerprint/sb4edge-gdm-fp-overlay
+emb FPDBC overlay/fingerprint/org.sb4edge.FingerprintIdentify.conf
+emb FPDBS overlay/fingerprint/org.sb4edge.FingerprintIdentify.dbus-service
+emb FPUNIT overlay/fingerprint/sb4edge-fp-identify.service
+emb FPGDM overlay/fingerprint/org.gnome.Shell@gdm-sb4edge-fp.conf
+emb WINM windows/sb4edge-windows-mount
+emb WINS windows/sb4edge-windows-mount.service
+emb WINP windows/org.sb4edge.windows-write.policy
+emb WINN windows/sb4edge-unlock-folder.py
 cat <<'EOF'
 
 [ "$(id -u)" = 0 ] || { echo "run it with sudo: sudo sh $0"; exit 1; }
@@ -233,6 +274,90 @@ PY
 		echo "kept: $O (Ubuntu's firmware does not have the same entry for this board)"
 	fi
 	rm -rf "$T"
+fi
+
+# Wi-Fi driver with the firmware statistics fix (same kernel check; in use now, so from the next boot).
+if [ "$kv" != "$KVER" ]; then
+	echo "skipped: Wi-Fi driver fix (built for linux-image-$KREL $KVER; installed: ${kv:-none})"
+elif put ATH "/usr/lib/modules/$KREL/updates/ath12k.ko" 644; then
+	depmod -a "$KREL"
+	echo "  the Wi-Fi fix takes effect at the next boot"
+fi
+
+# Silent boot: the sb4edge kernel as GRUB's top-level entry, no console cursor.
+grub=0
+put GKERN /etc/default/grub.d/zz-sb4edge-kernel.cfg 644 && grub=1
+put GREFI /etc/default/grub.d/zz-sb4edge-refind.cfg 644 && grub=1
+if [ $grub = 1 ] && command -v update-grub >/dev/null; then
+	update-grub >/dev/null 2>&1 && echo "boot menu updated (silent boot from the next start)" || echo "update-grub failed: run sudo update-grub"
+fi
+
+# GNOME extensions, system-wide (a copy in ~/.local/share/gnome-shell/extensions still takes precedence).
+schemas=0
+for e in $EXTS; do
+	var=${e%%:*} uuid=${e#*:}
+	eval "sha=\$${var}_SHA"
+	X=/usr/share/gnome-shell/extensions/$uuid M=/var/lib/sb4edge/extensions/$uuid.sha256
+	if [ -d "$X" ] && [ "$(cat "$M" 2>/dev/null)" = "$sha" ]; then echo "up to date: extension $uuid"; continue; fi
+	T=$(mktemp -d); extract "$var" "$T/e.zip"
+	[ -d "$X" ] && { backup "$X"; rm -rf "$X"; }
+	mkdir -p "$X"; python3 -I -m zipfile -e "$T/e.zip" "$X"; rm -rf "$T"
+	[ ! -d "$X/schemas" ] || glib-compile-schemas "$X/schemas"
+	chmod -R u=rwX,go=rX "$X"
+	mkdir -p "$(dirname "$M")"; echo "$sha" > "$M"
+	echo "updated: extension $uuid"; changed=1
+done
+put EXTO /usr/share/glib-2.0/schemas/90-sb4edge-extensions.gschema.override 644 && schemas=1
+[ $schemas = 0 ] || { glib-compile-schemas /usr/share/glib-2.0/schemas && echo "  extensions are on by default from the next login (unless you set your own list)"; }
+
+# Ubuntu Dock and AppIndicators patches (re-applied after their package updates by the apt hook).
+put DOCK /usr/lib/sb4edge/sb4edge-dock-fix 755 || true
+put DOCKH /etc/apt/apt.conf.d/99-sb4edge-dock-fix 644 || true
+
+# Fingerprint login straight from the login screen's user list.
+fp=0
+put FPID /usr/lib/sb4edge/sb4edge-fp-identify 755 && fp=1
+put FPTOK /usr/lib/sb4edge/sb4edge-fp-token 755 || true
+put FPOVL /usr/lib/sb4edge/sb4edge-gdm-fp-overlay 755 || true
+put FPDBC /usr/share/dbus-1/system.d/org.sb4edge.FingerprintIdentify.conf 644 && fp=1
+put FPDBS /usr/share/dbus-1/system-services/org.sb4edge.FingerprintIdentify.service 644 && fp=1
+put FPUNIT /usr/lib/systemd/system/sb4edge-fp-identify.service 644 && reload=1
+put FPGDM "/usr/lib/systemd/user/org.gnome.Shell@gdm.service.d/sb4edge-fp.conf" 644 || true
+if [ $fp = 1 ]; then
+	systemctl reload dbus 2>/dev/null || busctl call org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus ReloadConfig >/dev/null 2>&1 || true
+	systemctl try-restart sb4edge-fp-identify 2>/dev/null || true
+fi
+
+# Keeps all of this in place after upgrades; its first run applies the dock patches, builds the login screen
+# overlay and adds the PAM lines (gdm-password / gdm-fingerprint).
+put PERS /usr/lib/sb4edge/sb4edge-gnome-persist 755 || true
+put PERSS /usr/lib/systemd/system/sb4edge-gnome-persist.service 644 && reload=1
+put PERSH /etc/apt/apt.conf.d/99-sb4edge-gnome-persist 644 || true
+rm -f /etc/apt/apt.conf.d/99-sb4edge-gdm-fp
+systemctl daemon-reload 2>/dev/null || true
+systemctl enable sb4edge-gnome-persist.service >/dev/null 2>&1 || true
+/usr/lib/sb4edge/sb4edge-gnome-persist | sed 's/^/  /'
+
+# Windows drive read-only with Unlock / Lock folder in GNOME Files (needs bindfs, zenity, python3-nautilus, ntfs-3g).
+need=
+for p in python3-nautilus bindfs zenity ntfs-3g; do
+	dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q 'ok installed' || need="$need $p"
+done
+[ -z "$need" ] || DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $need >/dev/null 2>&1 || true
+missing=
+for p in $need; do dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q 'ok installed' || missing="$missing $p"; done
+if [ -n "$missing" ]; then
+	echo "skipped: Windows drive Unlock/Lock folder (needs:$missing; connect to the internet and run this script again)"
+else
+	put WINM /usr/lib/sb4edge/sb4edge-windows-mount 755 || true
+	put WINS /etc/systemd/system/sb4edge-windows-mount.service 644 && reload=1
+	put WINP /usr/share/polkit-1/actions/org.sb4edge.windows-write.policy 644 || true
+	put WINN /usr/share/nautilus-python/extensions/sb4edge-unlock-folder.py 644 || true
+	systemctl daemon-reload 2>/dev/null || true
+	if systemctl enable sb4edge-windows-mount.service >/dev/null 2>&1; then
+		grep -qs '^ENABLED=no' /etc/default/sb4edge-windows-mount && echo "  Windows drive: kept writable (ENABLED=no)" ||
+			echo "  Windows drive: read-only from the next boot; right-click a folder in Files -> Unlock folder to write there"
+	fi
 fi
 
 if command -v systemctl >/dev/null; then

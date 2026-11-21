@@ -695,3 +695,59 @@ Windows qcdxkm8380.sys: logging stripped; AUX diag escape at sub_140115C40 calls
   90-sb4edge-extensions.gschema.override): hidetopbar-multimonitor (with a fix: secondary panels now report their
   height to Desktop Icons NG, whose icons sat under those panels; overlapping icons there let a drag move the Windows
   drive into Home), top-bar-organizer-plus, simple-weather, no-screenshot-box-xr, tesseract-ocr-xr, rustdesk-window.
+- Ubuntu Dock over maximized windows, root cause (2026-11-21): with hidetopbar and the dock both hidden, a maximized
+  window covers the whole monitor and mutter unredirects it (direct scanout). The dock's inhibitsUnredirection only
+  returned true for fullscreen windows, so over a maximized Firefox the screen switched between scanout and
+  compositing as the dock appeared and hid: it flickered and lost hover. The tell: it behaved while a notification
+  was up (the message tray disables unredirection). Found by inspecting the live shell (unsafe mode via Looking
+  Glass, Eval) and confirmed by calling global.compositor.disable_unredirect() live. sb4edge-dock-fix patch 4
+  (sb4edge-dock-unredirect): the dock inhibits unredirection whenever it is SHOWING/SHOWN/HIDING. Also from 60 Hz
+  pointer traces: resting on the touchpad, the pointer jumps 15-50 px up when a finger lifts or settles, which left
+  the dock's box and hid it; the dock now stays up 40 px beside / 70 px above its box, a pointer back on the icons
+  during the hide delay cancels the hide, and a 150 ms watch reveals the hidden dock at the edge even if its strip
+  never gets hover (the last physical pixel row at 166 %). hide-delay 1.0 s had made the still-visible dock "catch"
+  the pointer early; 0.3 s on the reference laptop (user setting, not a distro default).
+- Overview (2026-11-20/21): Esc did not close the overview: snapd-search-provider@canonical.com (declares shell 48-49)
+  broke SearchController's Esc on GNOME 51; disabled in 90-sb4edge-extensions.gschema.override. New extension
+  sb4edge-overview-close: Esc (clearing a search first) and a click on empty space close the overview and app grid;
+  a click on a neighbouring workspace preview activates that workspace (the first version closed the overview).
+  hidetopbar: the overview search padding divided panelBox.height (already logical px) by the monitor scale, gluing
+  the entry to the panel at 166 %; now panelBox.height + 6 px (18 px above / 19 px below). The panel's 0.4 s slide in
+  the overview looked like the entry moving up: 0.15 s (schema default).
+- Fingerprint from the GDM user list (2026-11-20/21): GDM needs a user before PAM, so a touch on the user list did
+  nothing. sb4edge-fp-identify (root, D-Bus activated, callable by group gdm) verifies the finger against each user
+  with enrolled prints while the greeter's list is shown and only while the greeter session is active; on a match it
+  releases the reader, writes a one-time token (/run/sb4edge/fp-token/USER, root 0600, 20 s) and emits Identified. A
+  greeter-only loginDialog.js overlay (G_RESOURCE_OVERLAYS in a drop-in for org.gnome.Shell@gdm.service; GLib falls
+  back to the stock file if the overlay is missing; rebuilt from libshell by sb4edge-gdm-fp-overlay after updates)
+  calls Start/Stop and selects the matched user; pam_exec sb4edge-fp-token accepts the token once. Three rounds of
+  fixes from real logins: (1) Ubuntu's GDM authenticates through gdm-password (common-auth has pam_fprintd), so a
+  token check only in gdm-fingerprint was never used and a second touch was needed: the line now also sits in
+  gdm-password before common-auth. (2) The token time was written rounded and compared with truncated
+  /proc/uptime, so about half the touches looked 1 s in the future: whole seconds on both sides, 1 s tolerance.
+  (3) Lock screen ignored the finger once text was typed: busctl monitor showed gdm-password's pam_fprintd and
+  gdm-fingerprint both claiming the reader at prompt start ("Device was already claimed"); the former usually won,
+  waited 10 s, and gave up once a password was being typed. gdm-password now skips that one module
+  (`auth [success=1 default=ignore] pam_permit.so` right before @include common-auth, only while common-auth starts
+  with pam_fprintd), so GDM's background gdm-fingerprint service always has the reader. sudo/polkit unchanged.
+  pamtester: fresh token -> authenticated; used token -> fingerprint then password; wrong password fails in 2 s.
+- sb4edge-gnome-persist (2026-11-21): apt hook + boot service before GDM. Re-runs sb4edge-dock-fix and
+  sb4edge-gdm-fp-overlay, restores the PAM lines (both files are conffiles a release upgrade may replace), and adds
+  the running GNOME Shell major version to the shell-version of *@sb4edge and hidetopbar extensions (system and
+  ~/.local), so a GNOME upgrade does not silently disable them. Simulated GNOME 52 and a replaced PAM file: restored
+  once, only those extensions touched.
+- Windows drive read-only with Unlock/Lock folder (2026-11-20/21): ntfs-3g mounts the volume read-write at a
+  root-only path; the /run/media view is a read-only bind; unlocked folders (list in /var/lib/sb4edge/windows-unlocked,
+  re-applied at boot) are writable mounts on top, hidden from Files (x-gvfs-hide); GNOME Files' right-click menu
+  (nautilus-python) offers Unlock / Lock (pkexec). Generic since 2026-11-21: the NTFS volume holding
+  Windows/System32 is found at boot (UUID / USER_NAME / ENABLED=no in /etc/default/sb4edge-windows-mount).
+  Bugs found on the laptop: (1) the menu used os.path.ismount, which misses same-filesystem bind mounts: it now
+  reads the saved list plus rw mounts in mountinfo. (2) Files said "destination is read-only" in unlocked folders and
+  then crashed (also without the extension: a Nautilus bug in its error path): GIO decides filesystem::readonly by
+  device number and a bind mount keeps the read-only drive's device, so unlocked folders are bindfs mounts (own
+  device). (3) Lock/unlock changes only the mount, so Files got no change event: the helper touches the folder through
+  the read-write mount and restores its mtime (inotify ATTRIB). (4) With a space in its source path bindfs records
+  its source as "bindfs", libmount's utab merge fails and x-gvfs-hide is lost (Files offered "Unmount", which fails
+  for the user): bindfs reads through a spaceless alias bind under /run/sb4edge/unlocked; findmnt -l escapes spaces
+  as \x20, so lock/rename/delete now parse /proc/self/mountinfo. (5) An unlocked folder's own entry lives in its
+  locked parent and it is a mount point: rename-folder / delete-folder helper commands (zenity dialogs in the menu).

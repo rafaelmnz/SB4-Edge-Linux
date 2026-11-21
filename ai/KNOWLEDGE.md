@@ -239,6 +239,20 @@ implemented but not tested on hardware; **[open]** not solved.
   Fingerprint (GNOME Settings patch; polkit action `org.sb4edge.fingerprint-rename`, admin) [verified].
 - Power: USB autosuspend for the reader (udev, 2 s delay) saves about 0.5 W at idle with no extra unlock delay
   [verified: 3.3-3.6 W vs 4.0-4.4 W, battery, screen at 30 %].
+- **Login from the GDM user list with one touch** [verified 2026-11-21]: GDM runs PAM only after a user is chosen.
+  `sb4edge-fp-identify` (root, D-Bus `org.sb4edge.FingerprintIdentify`, callable by group gdm) verifies the finger
+  against each user with prints while the greeter's list is shown (only while that session is active); a match
+  releases the reader, writes a one-time token (`/run/sb4edge/fp-token/USER`, root 0600, valid 20 s, whole seconds
+  since boot) and emits Identified; a greeter-only `loginDialog.js` overlay selects that user and
+  `pam_exec sb4edge-fp-token` (in gdm-password and gdm-fingerprint, before the normal checks) accepts the token once.
+  With several users, a finger that does not match the user being tried moves on to the next: touch again.
+- **Ubuntu PAM quirk:** `common-auth` starts with `pam_fprintd` (timeout 10, one try), and GDM's gdm-password includes
+  it while GDM also runs its background gdm-fingerprint service: both claim the reader when a prompt starts
+  (fprintd "Device was already claimed"). The password one usually wins and stops listening once text is typed, so
+  the lock screen ignored the finger with text in the field. gdm-password now skips exactly that module
+  (`auth [success=1 default=ignore] pam_permit.so` before `@include common-auth`, only while it is the first auth
+  line); the background service then always has the reader [verified]. sudo/polkit keep fingerprint.
+  `overlay/gnome/sb4edge-gnome-persist` maintains these PAM lines across upgrades.
 
 ## Boot
 
@@ -265,6 +279,16 @@ implemented but not tested on hardware; **[open]** not solved.
 - cryptsetup 2.8.4 rejected recent Windows 11 BitLocker volumes ("Unexpected metadata entry value '36'": a new
   12-byte entry in the clear-key VMK); patched to skip unknown VMK entries (`patches/cryptsetup`).
 - Mount NTFS with ntfs-3g only: ntfs3 mounts a hibernated (Fast Startup) volume read-write.
+- **Read-only Windows drive with per-folder unlock** (`windows/sb4edge-windows-mount`, Files menu
+  `windows/sb4edge-unlock-folder.py`) [verified 2026-11-21]: ntfs-3g read-write at a root-only path, the /run/media
+  view a read-only bind, unlocked folders writable mounts on top (x-gvfs-hide), remembered in
+  /var/lib/sb4edge/windows-unlocked. Pitfalls met: GIO judges `filesystem::readonly` by device number, so a plain
+  bind mount of the same filesystem looks read-only to GNOME Files (refuses New Folder, then Nautilus crashes in its
+  error path) - use bindfs (own device); bindfs with a space in its source records its source as "bindfs" and loses
+  x-gvfs-hide (Files shows an "Unmount" it cannot do) - read through a spaceless alias bind; `findmnt -l` escapes
+  spaces as `\x20` - parse /proc/self/mountinfo; `os.path.ismount` misses same-filesystem binds; a lock/unlock
+  changes only the mount, so touch the folder (same inode, through the read-write mount) for Files to re-read it; an
+  unlocked folder's own entry is in its locked parent (rename/delete need the helper).
 
 ## NPU (Hexagon compute DSP)
 
@@ -283,6 +307,20 @@ implemented but not tested on hardware; **[open]** not solved.
 - Resources (`patches/resources/snapdragon-monitoring.patch`) shows the load, firmware state and the hottest `nsp*`
   thermal zone. Its graphs autoscale; a steady temperature then fills the graph and reads as full load, so the
   Hexagon temperature graph is pinned to 0-100 °C.
+
+## GNOME desktop (Ubuntu Dock, overview)
+
+- **Ubuntu Dock over maximized windows at fractional scaling** [verified 2026-11-21]: with the top bar (hidetopbar)
+  and the dock hidden, a maximized window covers the monitor and mutter unredirects it; the dock only inhibited
+  unredirection for fullscreen windows, so it flickered and lost hover over maximized Firefox (it behaved while a
+  notification was up - the message tray disables unredirection). Fix: inhibit whenever the dock is on screen.
+  Also: at 166 % the pointer at the bottom sits in the last physical pixel row, outside the dock's whole-pixel area
+  (edge watch), and a resting touchpad finger jumps the pointer 15-50 px when it lifts (tolerance zone above the
+  dock). All in `overlay/gnome/sb4edge-dock-fix`, re-applied by an apt hook.
+- **Overview Esc:** `snapd-search-provider@canonical.com` (declares GNOME 48-49) breaks Esc on GNOME 51; disabled.
+  `sb4edge-overview-close` adds Esc / empty-click close and workspace-preview click to switch [verified].
+- Extensions declare GNOME versions; `sb4edge-gnome-persist` adds the running major to the project's own extensions
+  after upgrades so they are not silently disabled.
 
 ## Open problems (good places to contribute)
 
