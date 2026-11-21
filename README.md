@@ -45,7 +45,7 @@ Or build it yourself with `build.sh` (below).
 | Video decoding/encoding (Iris) | works | hardware H.264, HEVC, VP9, AV1 decode and H.264/HEVC encode; see [Hardware acceleration](#hardware-acceleration) |
 | SD card reader | works | |
 | Battery, charging, fan profiles | works | charge limit (GNOME "Preserve battery health"); the fan runs at full speed if the CPU temperature cannot be read |
-| Windows (BitLocker) partitions | works | opened in Files with the BitLocker password or recovery key |
+| Windows (BitLocker) partitions | works | opened in Files with the BitLocker password or recovery key; the Windows drive is read-only, with *Unlock folder* / *Lock folder* in Files' right-click menu |
 | Fingerprint reader | works | EgisTec 1c7a:05a1 in the power button: GNOME login and lock screen (one touch on the user list picks your account and logs in), sudo; prints stay on the sensor (SDCP) and can be shared with Windows Hello; relabel fingers in Settings |
 
 Known issues: switching a USB-C port from DisplayPort back to USB 3 can fail until reboot; Secure Boot must be off

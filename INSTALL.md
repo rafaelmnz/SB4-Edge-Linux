@@ -115,6 +115,13 @@ off).
 
 ## 8. After installing
 
+- **Windows drive**: Ubuntu mounts the Windows system drive **read-only**, so nothing on the Linux side can damage
+  Windows by accident. To write somewhere on it, right-click the folder in Files → *Unlock folder* (asks for your
+  password); it and everything inside stay writable, also after a restart, until you right-click it → *Lock folder*.
+  Inside an unlocked folder the menu offers to lock that parent. Sync folders (Nextcloud, OneDrive, Syncthing...)
+  pointing at the Windows drive need their folder unlocked. `ENABLED=no` in `/etc/default/sb4edge-windows-mount`
+  mounts the drive the normal way (writable). If Windows was shut down with Fast Startup (hibernated), the whole
+  drive stays read-only until Windows is shut down fully (Shift + Shut down).
 - **Fingerprint**: the sensor stores fingerprints on the chip itself, shared by Windows and Linux. A finger enrolled
   in Ubuntu does **not** work in Windows (Windows Hello keeps its own list), but a finger enrolled in Windows can
   work in Ubuntu too. So **enroll your fingers in Windows Hello** (Windows Settings → Accounts → Sign-in options →

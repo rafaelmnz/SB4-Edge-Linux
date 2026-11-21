@@ -1,0 +1,148 @@
+#!/bin/sh
+# sb4edge: the Windows system drive is mounted read-only; folders are made writable one by one.
+#
+#   sb4edge-windows-mount start               mount read-only, re-apply the unlocked folders (boot service)
+#   sb4edge-windows-mount stop                unmount everything
+#   sb4edge-windows-mount unlock-folder PATH  make PATH and everything under it writable (kept across reboots)
+#   sb4edge-windows-mount lock-folder PATH    make it read-only again
+#   sb4edge-windows-mount status
+# unlock-folder/lock-folder run through pkexec (password prompt); GNOME Files offers them in the right-click menu
+# ("Unlock folder" / "Lock folder", nautilus-python extension sb4edge-unlock-folder.py). The unlocked folders are
+# remembered in /var/lib/sb4edge/windows-unlocked (one path per line, relative to the volume root).
+#
+# The drive is found automatically: the NTFS volume holding Windows/System32 (BitLocker volumes count once
+# sb4edge-windows-unlock has opened them at boot; a volume you unlock later in Files mounts normally, writable).
+# It shows in Files for the first user account. /etc/default/sb4edge-windows-mount can set
+#   ENABLED=no        mount Windows drives the normal way (writable), no Lock/Unlock folder
+#   UUID=...          the NTFS volume to use (filesystem UUID, see lsblk -f)
+#   USER_NAME=...     whose Files shows it (/run/media/USER_NAME/UUID)
+#
+# How: ntfs-3g mounts the volume read-write at $RW (root-only, not reachable by users); $MAIN (the /run/media path
+# Files shows as the drive) is a read-only bind of it, and each unlocked folder is a read-write bind on top, hidden
+# from the Files sidebar (x-gvfs-hide). A hibernated Windows (Fast Startup) is mounted read-only as a whole.
+set -u
+ENABLED=yes
+UUID=
+USER_NAME=
+[ -r /etc/default/sb4edge-windows-mount ] && . /etc/default/sb4edge-windows-mount
+[ -n "$USER_NAME" ] || USER_NAME=$(getent passwd | awk -F: '$3 >= 1000 && $3 < 60000 && $7 !~ /(nologin|false)$/ {print $1; exit}')
+STATE=/run/sb4edge/windows-uuid   # the volume chosen at start, for the other commands
+[ -n "$UUID" ] || [ ! -r "$STATE" ] || UUID=$(cat "$STATE")
+
+find_windows() {   # print the filesystem UUID of the NTFS volume that holds Windows/System32
+	probe=/run/sb4edge/probe
+	mkdir -p /run/sb4edge "$probe" && chmod 700 /run/sb4edge
+	for d in $(blkid -t TYPE=ntfs -o device 2>/dev/null); do
+		u=$(blkid -s UUID -o value "$d") || continue
+		m=$(findmnt -rn -S "$d" -o TARGET | head -1)
+		if [ -n "$m" ]; then
+			[ -d "$m/Windows/System32" ] && { echo "$u"; return 0; }
+			continue
+		fi
+		mount -t ntfs-3g -o ro "$d" "$probe" 2>/dev/null || continue
+		found=no; [ -d "$probe/Windows/System32" ] && found=yes
+		umount "$probe"
+		[ $found = yes ] && { echo "$u"; return 0; }
+	done
+	return 1
+}
+
+RW=/run/sb4edge/windows-rw
+MAIN=/run/media/$USER_NAME/$UUID
+LIST=/var/lib/sb4edge/windows-unlocked     # one path per line, relative to the volume root (readable by all: the
+                                           # Files menu reads it to offer Lock or Unlock)
+log() { echo "sb4edge-windows-mount: $*"; logger -t sb4edge-windows-mount -- "$*" 2>/dev/null || true; }
+mounted() { mountpoint -q "$1" 2>/dev/null; }
+hibernated() { findmnt -no OPTIONS "$RW" 2>/dev/null | grep -qw ro; }
+
+bind_rw() {   # bind_rw REL
+	if [ "$1" = . ]; then   # the whole volume
+		mount -o remount,bind,rw,nosuid,nodev "$MAIN" && log "unlocked: whole volume"; return
+	fi
+	[ -d "$RW/$1" ] || { log "not a folder on the volume: $1"; return 1; }
+	mounted "$MAIN/$1" && return 0
+	mount --bind -o x-gvfs-hide "$RW/$1" "$MAIN/$1" && log "unlocked: $1"
+}
+
+start() {
+	[ "$ENABLED" = yes ] || { log "disabled in /etc/default/sb4edge-windows-mount"; exit 0; }
+	[ -n "$USER_NAME" ] || { log "no user account yet"; exit 0; }
+	[ -n "$UUID" ] || UUID=$(find_windows) || { log "no Windows volume found (BitLocker still locked?)"; exit 0; }
+	MAIN=/run/media/$USER_NAME/$UUID
+	d=$(blkid -U "$UUID" 2>/dev/null)
+	[ -n "$d" ] || { log "volume $UUID not present (BitLocker still locked?)"; exit 0; }
+	mounted "$MAIN" && { log "already mounted"; exit 0; }
+	uid=$(id -u "$USER_NAME") gid=$(id -g "$USER_NAME")
+	mkdir -p /run/sb4edge && chmod 700 /run/sb4edge
+	mkdir -p "$RW" "$MAIN"
+	opts="uid=$uid,gid=$gid,umask=022,windows_names,nosuid,nodev"
+	if ! mount -t ntfs-3g -o "$opts" "$d" "$RW" 2>/tmp/sb4edge-ntfs-err; then
+		log "read-write mount refused ($(tr '\n' ' ' </tmp/sb4edge-ntfs-err)); mounting read-only"
+		mount -t ntfs-3g -o "ro,$opts" "$d" "$RW" || { log "mount failed"; exit 1; }
+	fi
+	mount --make-private "$RW"   # the binds below must not propagate back into $RW
+	mount --bind "$RW" "$MAIN"
+	mount -o remount,bind,ro,nosuid,nodev "$MAIN"
+	if hibernated; then
+		log "Windows is hibernated: the whole volume stays read-only"
+	elif [ -r "$LIST" ]; then
+		while IFS= read -r p; do [ -n "$p" ] && bind_rw "$p"; done < "$LIST"
+	fi
+	echo "$UUID" > "$STATE"
+	log "mounted $d at $MAIN (read-only, unlocked folders writable)"
+}
+
+stop() {
+	findmnt -ln -o TARGET | grep -E "^($MAIN|$RW)/" | sort -r | while IFS= read -r m; do umount "$m" || umount -l "$m"; done
+	mounted "$MAIN" && { umount "$MAIN" || umount -l "$MAIN"; }
+	mounted "$RW" && umount "$RW"
+	rm -f "$STATE"
+	log "unmounted"
+}
+
+rel_of() {    # rel_of PATH: path relative to the volume root, or fail
+	p=$(realpath -m -- "$1") || return 1
+	case "$p" in
+	"$MAIN") echo . ;;
+	"$MAIN"/*) echo "${p#"$MAIN"/}" ;;
+	*) return 1 ;;
+	esac
+}
+
+unlock_folder() {
+	mounted "$MAIN" || { log "the Windows volume is not mounted"; exit 1; }
+	hibernated && { log "Windows is hibernated (Fast Startup): the volume stays read-only"; exit 1; }
+	r=$(rel_of "${1:-}") || { log "not on the Windows volume: ${1:-}"; exit 2; }
+	bind_rw "$r" || exit 1
+	mkdir -p "$(dirname "$LIST")"; touch "$LIST"
+	grep -qxF -- "$r" "$LIST" || printf '%s\n' "$r" >> "$LIST"
+	chmod 644 "$LIST"
+}
+
+lock_folder() {
+	r=$(rel_of "${1:-}") || { log "not on the Windows volume: ${1:-}"; exit 2; }
+	# folders unlocked inside it go too
+	findmnt -ln -o TARGET | grep -E "^$MAIN/" | sort -r | while IFS= read -r m; do
+		case "$m" in "$MAIN/$r"|"$MAIN/$r"/*) umount "$m" 2>/dev/null || { log "busy, try again: $m"; exit 1; } ;; esac
+	done || exit 1
+	if [ -f "$LIST" ]; then
+		awk -v r="$r" '$0 != r && index($0, r "/") != 1' "$LIST" > "$LIST.new" && mv "$LIST.new" "$LIST"
+	fi
+	[ "$r" = . ] && mount -o remount,bind,ro,nosuid,nodev "$MAIN"
+	log "locked: $r"
+}
+
+status() {
+	mounted "$MAIN" || { echo "not mounted"; return; }
+	hibernated && echo "volume: read-only (Windows hibernated)" || echo "volume: read-only"
+	findmnt -ln -o TARGET | grep -E "^$MAIN/" | sed "s|^$MAIN/|unlocked: |"
+}
+
+case "${1:-}" in
+start) start ;;
+stop) stop ;;
+unlock-folder) unlock_folder "${2:-}" ;;
+lock-folder) lock_folder "${2:-}" ;;
+status) status ;;
+*) echo "usage: $0 start|stop|unlock-folder PATH|lock-folder PATH|status" >&2; exit 2 ;;
+esac

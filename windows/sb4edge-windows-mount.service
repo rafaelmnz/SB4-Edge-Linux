@@ -1,0 +1,13 @@
+[Unit]
+Description=sb4edge: Windows drive read-only, with Unlock/Lock folder in Files
+After=sb4edge-windows-unlock.service local-fs.target
+Wants=sb4edge-windows-unlock.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/sb4edge/sb4edge-windows-mount start
+ExecStop=/usr/lib/sb4edge/sb4edge-windows-mount stop
+
+[Install]
+WantedBy=multi-user.target

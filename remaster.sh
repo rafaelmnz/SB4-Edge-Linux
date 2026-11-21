@@ -113,7 +113,7 @@ export DEBIAN_FRONTEND=noninteractive FK_MACHINE=none
 mkdir -p /tmp/net-sources; cp /etc/apt/sources.list.d/ubuntu.sources /tmp/net-sources/
 APT='-o Dir::Etc::sourcelist=/dev/null -o Dir::Etc::sourceparts=/tmp/net-sources'
 apt-get \$APT update
-apt-get \$APT install -y --no-install-recommends curl openssh-server nvtop gstreamer1.0-plugins-bad libopenh264-8 systemd-ukify stubble python3-pefile ddcutil libprotobuf-c1 fake-hwclock
+apt-get \$APT install -y --no-install-recommends curl openssh-server nvtop gstreamer1.0-plugins-bad libopenh264-8 systemd-ukify stubble python3-pefile ddcutil libprotobuf-c1 fake-hwclock python3-nautilus ntfs-3g
 systemctl enable ssh.service
 apt-get clean; rm -rf /tmp/net-sources
 "
@@ -236,6 +236,15 @@ install -Dm755 /work/windows/sb4edge-windows-unlock "$B/usr/lib/sb4edge/sb4edge-
 install -Dm644 /work/windows/sb4edge-windows-unlock.service "$B/etc/systemd/system/sb4edge-windows-unlock.service"
 ln -sf ../sb4edge-windows-unlock.service "$B/etc/systemd/system/multi-user.target.wants/sb4edge-windows-unlock.service"
 install -Dm644 /work/windows/mount_options.conf "$B/etc/udisks2/mount_options.conf"
+# The Windows system drive (the NTFS volume with Windows/System32, found at boot) is mounted read-only so Linux can't
+# damage Windows by accident; GNOME Files' right-click menu offers "Unlock folder" (writable, after a password
+# prompt, remembered across reboots) and "Lock folder" on unlocked ones. ENABLED=no in
+# /etc/default/sb4edge-windows-mount mounts it the normal way. A BitLocker volume unlocked later in Files is normal.
+install -Dm755 /work/windows/sb4edge-windows-mount "$B/usr/lib/sb4edge/sb4edge-windows-mount"
+install -Dm644 /work/windows/sb4edge-windows-mount.service "$B/etc/systemd/system/sb4edge-windows-mount.service"
+ln -sf ../sb4edge-windows-mount.service "$B/etc/systemd/system/multi-user.target.wants/sb4edge-windows-mount.service"
+install -Dm644 /work/windows/org.sb4edge.windows-write.policy "$B/usr/share/polkit-1/actions/org.sb4edge.windows-write.policy"
+install -Dm644 /work/windows/sb4edge-unlock-folder.py "$B/usr/share/nautilus-python/extensions/sb4edge-unlock-folder.py"
 # HDMI (display/g9): the port's RTD2171 converter only takes HBR2 x4 (17.28 Gbit/s). For the Samsung Odyssey
 # G95NC a hotplug helper loads an EDID with 5120x1440 @ 75 Hz while it is connected (cleared on unplug).
 install -Dm755 /work/display/g9/sb4edge-hdmi-edid "$B/usr/lib/sb4edge/sb4edge-hdmi-edid"
