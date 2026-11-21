@@ -59,6 +59,22 @@ log() { echo "sb4edge-windows-mount: $*"; logger -t sb4edge-windows-mount -- "$*
 mounted() { mountpoint -q "$1" 2>/dev/null; }
 hibernated() { findmnt -no OPTIONS "$RW" 2>/dev/null | grep -qw ro; }
 
+mount_targets() {   # every mount point, one per line, with the kernel's octal escapes (spaces...) decoded
+	awk '{print $5}' /proc/self/mountinfo | sed 's/\\040/ /g; s/\\011/\t/g; s/\\012/\n/g; s/\\134/\\/g'
+}
+
+ALIASES=/run/sb4edge/unlocked
+alias_of() { echo "$ALIASES/$(printf %s "$1" | sha1sum | cut -c1-16)"; }
+unalias_unused() {   # drop alias mounts whose folder is no longer unlocked
+	[ -d "$ALIASES" ] || return 0
+	for a in "$ALIASES"/*; do
+		[ -d "$a" ] || continue
+		awk '{for (i = 7; i <= NF; i++) if ($i == "-") { print $(i + 2); break }}' /proc/self/mountinfo | grep -qxF "$a" && continue
+		mounted "$a" && umount "$a" 2>/dev/null; rmdir "$a" 2>/dev/null
+	done
+	return 0
+}
+
 notify_files() {   # notify_files REL: make file managers re-read the folder's (now changed) writability
 	# Unlocking/locking only changes the mount over the folder, not the folder itself, so GNOME Files gets no change
 	# event, keeps its cached read-only state (no "New Folder") and could crash on the stale view. Touching the
@@ -77,7 +93,12 @@ bind_rw() {   # bind_rw REL
 	mounted "$MAIN/$1" && return 0
 	# bindfs (its own FUSE filesystem), not mount --bind: a bind mount keeps the read-only drive's device number,
 	# so GIO/GNOME Files took the folder for read-only ("destination is read-only", then Files crashed)
-	mount -t fuse.bindfs -o allow_other,x-gvfs-hide "$RW/$1" "$MAIN/$1" && log "unlocked: $1"
+	# bindfs reads the folder through a hidden alias without spaces: with a space in its source path bindfs records
+	# its source as just "bindfs", the x-gvfs-hide flag (kept by path) no longer matches, and Files showed the
+	# folder as a mount it offered to "unmount"
+	a=$(alias_of "$1"); mkdir -p "$a"
+	mounted "$a" || { mount --bind "$RW/$1" "$a" && mount --make-private "$a"; } || return 1
+	mount -t fuse.bindfs -o allow_other,x-gvfs-hide "$a" "$MAIN/$1" && log "unlocked: $1"
 }
 
 start() {
@@ -109,8 +130,9 @@ start() {
 }
 
 stop() {
-	findmnt -ln -o TARGET | grep -E "^($MAIN|$RW)/" | sort -r | while IFS= read -r m; do umount "$m" || umount -l "$m"; done
+	mount_targets | grep -E "^($MAIN|$RW)/" | sort -r | while IFS= read -r m; do umount "$m" || umount -l "$m"; done
 	mounted "$MAIN" && { umount "$MAIN" || umount -l "$MAIN"; }
+	unalias_unused
 	mounted "$RW" && umount "$RW"
 	rm -f "$STATE"
 	log "unmounted"
@@ -139,13 +161,14 @@ unlock_folder() {
 lock_folder() {
 	r=$(rel_of "${1:-}") || { log "not on the Windows volume: ${1:-}"; exit 2; }
 	# folders unlocked inside it go too
-	findmnt -ln -o TARGET | grep -E "^$MAIN/" | sort -r | while IFS= read -r m; do
+	mount_targets | grep -E "^$MAIN/" | sort -r | while IFS= read -r m; do
 		case "$m" in "$MAIN/$r"|"$MAIN/$r"/*) umount "$m" 2>/dev/null || { log "busy, try again: $m"; exit 1; } ;; esac
 	done || exit 1
 	if [ -f "$LIST" ]; then
 		awk -v r="$r" '$0 != r && index($0, r "/") != 1' "$LIST" > "$LIST.new" && mv "$LIST.new" "$LIST"
 	fi
 	[ "$r" = . ] && mount -o remount,bind,ro,nosuid,nodev "$MAIN"
+	unalias_unused
 	notify_files "$r"
 	log "locked: $r"
 }
@@ -157,9 +180,10 @@ unlock_point() {   # unlock_point PATH: print REL if PATH is itself an unlocked 
 }
 
 unmount_tree() {   # unmount_tree REL: unmount the folder and anything unlocked inside it
-	findmnt -ln -o TARGET | grep -E "^$MAIN/" | sort -r | while IFS= read -r m; do
+	mount_targets | grep -E "^$MAIN/" | sort -r | while IFS= read -r m; do
 		case "$m" in "$MAIN/$1"|"$MAIN/$1"/*) umount "$m" 2>/dev/null || { log "in use, close what uses it and try again: $m"; exit 1; } ;; esac
-	done
+	done || return 1
+	unalias_unused
 }
 
 remount_tree() {   # remount_tree REL: unlock again every listed folder at or inside REL
@@ -196,7 +220,7 @@ delete_folder() {   # permanent: the read-only drive has no Trash (GNOME Files a
 status() {
 	mounted "$MAIN" || { echo "not mounted"; return; }
 	hibernated && echo "volume: read-only (Windows hibernated)" || echo "volume: read-only"
-	findmnt -ln -o TARGET | grep -E "^$MAIN/" | sed "s|^$MAIN/|unlocked: |"
+	mount_targets | grep -E "^$MAIN/" | sed "s|^$MAIN/|unlocked: |"
 }
 
 case "${1:-}" in
