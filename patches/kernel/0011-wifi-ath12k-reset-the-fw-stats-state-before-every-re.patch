@@ -1,0 +1,51 @@
+From 8cdea389c898b1c3bb09662de250900c520ef60b Mon Sep 17 00:00:00 2001
+From: rafaelmnz <69637001+rafaelmnz@users.noreply.github.com>
+Date: Fri, 20 Nov 2026 20:02:22 -0500
+Subject: [PATCH] wifi: ath12k: reset the fw stats state before every request
+
+ath12k_wmi_fw_stats_process() completes fw_stats_done for WMI_REQUEST_VDEV_STAT only when
+fw_stats.num_vdev_recvd equals the number of started vdevs, and the counter was reset only by callers
+after a successful request. After a single timeout or a late reply the counter stays past that number,
+so every later VDEV_STAT request waits the full 3 s ("time out while waiting for fw stats done").
+Station dumps make two of them, so `iw station dump`, NetworkManager and system monitors blocked
+6-11 s per query on WCN7850 (2500 timeouts in a day), freezing the apps that asked.
+
+Reset the stats state at the start of ath12k_mac_get_fw_stats(), and treat "at least as many vdev
+replies as started vdevs" as done.
+---
+ drivers/net/wireless/ath/ath12k/mac.c | 5 +++++
+ drivers/net/wireless/ath/ath12k/wmi.c | 2 +-
+ 2 files changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/wireless/ath/ath12k/mac.c b/drivers/net/wireless/ath/ath12k/mac.c
+index 7872e7c..adfde61 100644
+--- a/drivers/net/wireless/ath/ath12k/mac.c
++++ b/drivers/net/wireless/ath/ath12k/mac.c
+@@ -5464,6 +5464,11 @@ int ath12k_mac_get_fw_stats(struct ath12k *ar,
+ 
+ 	reinit_completion(&ar->fw_stats_complete);
+ 	reinit_completion(&ar->fw_stats_done);
++	/* Start every request from an empty state: the reply counter (num_vdev_recvd) was only reset after a
++	 * successful request, so one timeout or one late reply left it past the number of started vdevs, and
++	 * every later WMI_REQUEST_VDEV_STAT waited the full 3 s for a "done" that never came.
++	 */
++	ath12k_fw_stats_reset(ar);
+ 
+ 	ret = ath12k_wmi_send_stats_request_cmd(ar, param->stats_id,
+ 						param->vdev_id, param->pdev_id);
+diff --git a/drivers/net/wireless/ath/ath12k/wmi.c b/drivers/net/wireless/ath/ath12k/wmi.c
+index 75b2599..92854c0 100644
+--- a/drivers/net/wireless/ath/ath12k/wmi.c
++++ b/drivers/net/wireless/ath/ath12k/wmi.c
+@@ -8656,7 +8656,7 @@ static void ath12k_wmi_fw_stats_process(struct ath12k *ar,
+ 		rcu_read_unlock();
+ 
+ 		if (total_vdevs_started)
+-			is_end = ((++ar->fw_stats.num_vdev_recvd) ==
++			is_end = ((++ar->fw_stats.num_vdev_recvd) >=
+ 				  total_vdevs_started);
+ 
+ 		list_splice_tail_init(&stats->vdevs,
+-- 
+2.55.0
+

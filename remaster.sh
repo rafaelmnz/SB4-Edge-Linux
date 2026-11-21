@@ -272,6 +272,15 @@ open(p, "w").write(s)
 PY
 chroot "$B" glib-compile-schemas "/usr/share/gnome-shell/extensions/$EXT/schemas"
 chmod -R u=rwX,go=rX "$B/usr/share/gnome-shell/extensions/$EXT"
+# Extensions installed on the reference laptop (overlay/gnome/extensions/*.zip, hidetopbar-multimonitor with sb4edge
+# fixes), system-wide and enabled by 90-sb4edge-extensions.gschema.override.
+for Z in /work/overlay/gnome/extensions/*.zip; do
+	U=$(basename "$Z" .zip); X="$B/usr/share/gnome-shell/extensions/$U"
+	rm -rf "$X"; mkdir -p "$X"; python3 -m zipfile -e "$Z" "$X"
+	[ ! -d "$X/schemas" ] || chroot "$B" glib-compile-schemas "/usr/share/gnome-shell/extensions/$U/schemas"
+	chmod -R u=rwX,go=rX "$X"
+	grep -q "\"uuid\": *\"$U\"" "$X/metadata.json" || { echo "extension $U: uuid mismatch"; exit 1; }
+done
 install -Dm644 /work/overlay/gnome/90-sb4edge-extensions.gschema.override "$B/usr/share/glib-2.0/schemas/90-sb4edge-extensions.gschema.override"
 # authd (cloud/OIDC login) and USBGuard are not installed: Ubuntu's defaults made every login/unlock log "PAM service
 # gdm-authd was not found" and GNOME's USB protection "Failed to fetch USBGuard parameters".

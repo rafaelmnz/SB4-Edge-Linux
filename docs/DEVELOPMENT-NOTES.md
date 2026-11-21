@@ -681,3 +681,17 @@ Windows qcdxkm8380.sys: logging stripped; AUX diag escape at sub_140115C40 calls
   libavcodec; 4K 40 Mbit/s H.264 73 fps, 1.2 CPU-s per 10 s (software 9.2). qcom-va-driver-tests: all pass except
   vpp-overlay (CDSP VPP disabled at build time); vpp-scaling/tonemap and prime-import need /dev/dma_heap/system
   (root-only). Citrix: HWAccelerationEnabled=True in ~/.ICAClient/wfclient.ini [Thinwire3.0].
+- Wi-Fi stats freezes (2026-11-20): Resources froze (its UI thread blocked in ath12k_mac_get_fw_stats /
+  nl80211_dump_interface), and every `iw station dump` took 6-11 s: "time out while waiting for fw stats done" 2500x
+  in a day. fw_stats.num_vdev_recvd was only reset after a successful request, so after one miss every VDEV_STAT
+  request waited its 3 s timeout (two per station dump). patches/kernel/0011 resets the state per request and uses
+  ">="; on the laptop (out-of-tree ath12k.ko in updates/, exported symbol CRCs unchanged) station dumps now take 0.00 s.
+- Ubuntu Dock hid by itself on the 166 % panel with Firefox maximized or fullscreen (the Dell at 100 % was fine):
+  the pointer at the very bottom sits in the last physical pixel row (logical y ~1079.4), outside the dock's
+  whole-pixel area, and each redraw of the window below re-picks the pointer onto it, so the dock lost hover and hid.
+  (The same edge is why "require pressure to show" never triggered there.) sb4edge-dock-fix now treats a pointer
+  within 3 px of the dock's edge, inside its width, as hovering. Found with temporary show/hide/hover logging.
+- Extensions from the reference laptop are now part of the image (overlay/gnome/extensions/*.zip, enabled by
+  90-sb4edge-extensions.gschema.override): hidetopbar-multimonitor (with a fix: secondary panels now report their
+  height to Desktop Icons NG, whose icons sat under those panels; overlapping icons there let a drag move the Windows
+  drive into Home), top-bar-organizer-plus, simple-weather, no-screenshot-box-xr, tesseract-ocr-xr, rustdesk-window.

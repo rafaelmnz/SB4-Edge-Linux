@@ -1,4 +1,12 @@
-# External monitor brightness slider (DDC/CI via ddcutil) in the system menu. Ubuntu's own extensions
-# (dock, desktop icons, tiling assistant) are enabled by the ubuntu session mode, not by this key.
+# Extensions enabled by default. Ubuntu's own extensions (dock, desktop icons, tiling assistant) are enabled by the
+# ubuntu session mode, not by this key. The others are installed system-wide by remaster.sh from overlay/gnome:
+#   display-brightness-ddcutil  external monitor brightness (DDC/CI) in the system menu
+#   hidetopbar-multimonitor     auto-hiding top bar on every monitor (sb4edge fix: desktop icons kept below the
+#                               secondary panels)
+#   top-bar-organizer-plus      reorder top bar items
+#   simple-weather              weather in the top bar
+#   no-screenshot-box-xr        screenshot UI without the selection box
+#   tesseract-ocr-xr            OCR (text) from a screen area, needs tesseract-ocr
+#   rustdesk-window             keeps RustDesk's session window usable on Wayland
 [org.gnome.shell]
-enabled-extensions=['display-brightness-ddcutil@themightydeity.github.com']
+enabled-extensions=['display-brightness-ddcutil@themightydeity.github.com', 'hidetopbar-multimonitor@linuxitos.local', 'top-bar-organizer-plus@shibasishpaul.github.com', 'simple-weather@romanlefler.com', 'no-screenshot-box-xr@sb4edge', 'tesseract-ocr-xr@sb4edge', 'rustdesk-window@sb4edge']

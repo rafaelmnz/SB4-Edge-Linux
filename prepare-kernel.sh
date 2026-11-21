@@ -20,4 +20,6 @@ $G apply /work/patches/kernel/0005-media-iris-wrap-the-timestamp-metadata-index-
 # Iris for VA-API (qcom-va-driver): decode-order output, larger capture pools, encoder deblocking controls,
 # timestamps on error buffers, NOSHOW recycling (AV1). From qcom-va-driver's patches/ (GPL-2.0); 0006 rebased on 7.4-rc3.
 for p in /work/patches/kernel/00{06,07,08,09,10}-*.patch; do $G apply "$p"; done
+# ath12k (WCN7850 Wi-Fi): the fw stats counter was never reset after a miss, so every station dump blocked 6 s.
+$G apply /work/patches/kernel/0011-wifi-ath12k-reset-the-fw-stats-state-before-every-re.patch
 $G log --oneline -4

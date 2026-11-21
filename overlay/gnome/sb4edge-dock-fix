@@ -11,6 +11,11 @@
 #    update during that teardown called getDefaultGSettings() on a destroyed SettingsManager and threw
 #      TypeError: can't access property "gsettings", SettingsManager.getDefault() is null
 #    It now falls back to the last valid GSettings object.
+# 3. Ubuntu Dock docking.js: on a fractionally scaled monitor (e.g. 166 %), the pointer at the very screen edge sits
+#    in the last physical pixel row, which the dock's (whole-logical-pixel) area can miss. Whenever the window below
+#    redraws (Firefox does constantly), the shell re-picks and the dock loses hover and hides with the pointer still
+#    on the edge. A pointer within 3 px of the dock's screen edge, inside the dock's width, now counts as hovering;
+#    a 100 ms check hides the dock once it really leaves.
 import os
 import shutil
 import sys
@@ -18,6 +23,7 @@ import sys
 EXT = "/usr/share/gnome-shell/extensions"
 DOCK_MARK = "sb4edge-dock-fix"
 APPIND_MARK = "sb4edge-appindicator-fix"
+EDGE_MARK = "sb4edge-dock-edge-hover"
 
 PATCHES = [
     (f"{EXT}/ubuntu-dock@ubuntu.com/theming.js", DOCK_MARK, [
@@ -47,6 +53,51 @@ PATCHES = [
          "        this._gsettings = extension.getSettings();\n        lastGSettings = this._gsettings;\n"),
         ("    return SettingsManager.getDefault().gsettings;\n",
          "    return SettingsManager.getDefault()?.gsettings ?? lastGSettings;\n"),
+    ]),
+    (f"{EXT}/ubuntu-dock@ubuntu.com/docking.js", EDGE_MARK, [
+        ("                if (this._box.hover || Main.overview.visible)\n",
+         "                if (this._box.hover || Main.overview.visible || this._pointerAtDockEdge())\n"),
+        ("    _show() {\n",
+         "    // " + EDGE_MARK + ": see /usr/lib/sb4edge/sb4edge-dock-fix (fractional scaling edge row)\n"
+         "    _pointerAtDockEdge() {\n"
+         "        const m = this._monitor;\n"
+         "        if (!m)\n"
+         "            return false;\n"
+         "        const [x, y] = global.get_pointer();\n"
+         "        const EDGE = 3;\n"
+         "        let atEdge;\n"
+         "        if (this._position === St.Side.BOTTOM)\n"
+         "            atEdge = y >= m.y + m.height - EDGE && x >= this.x && x < this.x + this.width;\n"
+         "        else if (this._position === St.Side.TOP)\n"
+         "            atEdge = y < m.y + EDGE && x >= this.x && x < this.x + this.width;\n"
+         "        else if (this._position === St.Side.LEFT)\n"
+         "            atEdge = x < m.x + EDGE && y >= this.y && y < this.y + this.height;\n"
+         "        else\n"
+         "            atEdge = x >= m.x + m.width - EDGE && y >= this.y && y < this.y + this.height;\n"
+         "        if (atEdge && !this._edgeHoverId) {\n"
+         "            this._edgeHoverId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, () => {\n"
+         "                if (this._box?.hover || this._pointerAtDockEdgeNow())\n"
+         "                    return GLib.SOURCE_CONTINUE;\n"
+         "                this._edgeHoverId = 0;\n"
+         "                this._hoverChanged();\n"
+         "                return GLib.SOURCE_REMOVE;\n"
+         "            });\n"
+         "        }\n"
+         "        return atEdge;\n"
+         "    }\n\n"
+         "    _pointerAtDockEdgeNow() {\n"
+         "        const id = this._edgeHoverId;\n"
+         "        this._edgeHoverId = -1;   // no new timer from this check\n"
+         "        const r = this._pointerAtDockEdge();\n"
+         "        this._edgeHoverId = id;\n"
+         "        return r;\n"
+         "    }\n\n"
+         "    _show() {\n"),
+        ("    _onDestroy() {\n",
+         "    _onDestroy() {\n"
+         "        if (this._edgeHoverId > 0)\n"
+         "            GLib.source_remove(this._edgeHoverId);\n"
+         "        this._edgeHoverId = 0;\n"),
     ]),
 ]
 
