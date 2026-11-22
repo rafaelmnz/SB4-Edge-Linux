@@ -751,3 +751,22 @@ Windows qcdxkm8380.sys: logging stripped; AUX diag escape at sub_140115C40 calls
   for the user): bindfs reads through a spaceless alias bind under /run/sb4edge/unlocked; findmnt -l escapes spaces
   as \x20, so lock/rename/delete now parse /proc/self/mountinfo. (5) An unlocked folder's own entry lives in its
   locked parent and it is a mount point: rename-folder / delete-folder helper commands (zenity dialogs in the menu).
+- Fullscreen Citrix (Epic) and RustDesk jumped a few pixels up and left whenever the top bar appeared on the 166 %
+  panel (2026-11-21). A window logger showed no move or resize at all; disabling unredirection live
+  (global.compositor.disable_unredirect()) made it stop. A fullscreen window is scanned out directly with the display
+  hardware doing the 1.667x scaling, which lands a few pixels off GNOME's own scaling; when the top bar (or dock)
+  appears, GNOME composites again and the picture shifts. sb4edge-dock-fix patch 5 (sb4edge-dock-unredirect-
+  fractional): the dock inhibits unredirection for fullscreen windows on fractionally scaled monitors; integer-scaled
+  monitors (the external one at 100 %) keep direct scanout. (It showed up with Firefox open on the other monitor; not
+  investigated further, the fix covers both cases.)
+- Sluggish desktop for minutes after every login, with two monitors (2026-11-21): mutter logged "Page flip failed:
+  drmModeAtomicCommit: Invalid argument" hundreds of times per minute from the moment the session took over from the
+  login screen until the next full modeset (screen lock/blank). drm.debug=0x14 (only briefly: at 120 Hz it slows the
+  whole system) showed "[PLANE:51:plane-0] switching CRTC directly" then "atomic core check failed": the user
+  session's mutter tried to move a hardware plane from one CRTC to the other in a single commit, which the DRM core
+  refuses; the login screen (default layout) had left the planes assigned differently. Re-applying the display
+  configuration once cleared it (0 failures afterwards). Fix: the login screen gets the user's monitors.xml
+  (/etc/xdg/monitors.xml, kept in sync by sb4edge-gnome-persist at every boot and after updates); after that login
+  0 failures. Toggling VRR at runtime did not reproduce it, so the panel's VRR patch is not the cause.
+- geoclue (location) timed out after 90 s at boot (night light and the weather extension then failed to get a
+  location); started by hand it is ready in 2 s. Debug drop-in added to catch the boot-time cause.

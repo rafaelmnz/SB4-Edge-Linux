@@ -60,13 +60,15 @@ cat <<EOF
 #     from a screen area, RustDesk window helper, and overview: Esc / a click on empty space closes it and a click on
 #     a neighbouring workspace switches to it. Ubuntu's snap search add-on (broke Esc in the overview) is turned off.
 # 15. Ubuntu Dock: no more flicker or hiding by itself over maximized windows (Firefox) on the 166 % panel; reveals
-#     reliably at the screen edge and forgives small pointer jumps.
+#     reliably at the screen edge and forgives small pointer jumps. Fullscreen windows (Citrix, RustDesk) on that
+#     panel no longer jump a few pixels when the top bar appears.
 # 16. Fingerprint: one touch on the login screen's user list picks your account and logs in; the lock screen takes
 #     a finger even with text in the password field.
 # 17. Windows drive read-only, with "Unlock folder" / "Lock folder" (and Rename / Delete for unlocked folders) in
 #     GNOME Files' right-click menu, from the next boot. ENABLED=no in /etc/default/sb4edge-windows-mount keeps it
 #     writable as before.
-# 18. These GNOME fixes are re-applied after package and release upgrades (sb4edge-gnome-persist).
+# 18. These GNOME fixes are re-applied after package and release upgrades (sb4edge-gnome-persist), which also gives
+#     the login screen your display setup: with two monitors the desktop no longer stutters for minutes after login.
 set -eu
 KREL=$KREL
 KVER=$KVER

@@ -23,6 +23,10 @@
 #    so over a maximized Firefox the screen kept switching between scanout and compositing as the dock appeared and
 #    hid: the dock flickered and lost hover (it worked only while a notification, which blocks unredirection, was up).
 #    The dock now blocks unredirection whenever it is on screen.
+# 5. Ubuntu Dock docking.js: a fullscreen window on a fractionally scaled monitor (166 %) is scanned out with the
+#    display hardware doing the scaling, which lands a few pixels off GNOME's own scaling: fullscreen Citrix/RustDesk
+#    jumped up and left whenever the top bar or the dock appeared (GNOME composites again). Unredirection is now
+#    blocked for fullscreen windows on fractionally scaled monitors (integer-scaled monitors keep direct scanout).
 import os
 import shutil
 import sys
@@ -32,6 +36,7 @@ DOCK_MARK = "sb4edge-dock-fix"
 APPIND_MARK = "sb4edge-appindicator-fix"
 EDGE_MARK = "sb4edge-dock-edge-hover"
 UNREDIR_MARK = "sb4edge-dock-unredirect"
+FRAC_MARK = "sb4edge-dock-unredirect-fractional"
 
 PATCHES = [
     (f"{EXT}/ubuntu-dock@ubuntu.com/theming.js", DOCK_MARK, [
@@ -180,6 +185,14 @@ PATCHES = [
          "        case State.SHOWN:\n"
          "            // " + UNREDIR_MARK + ": also over maximized windows that cover the monitor (see sb4edge-dock-fix)\n"
          "            return true;\n"),
+    ]),
+    (f"{EXT}/ubuntu-dock@ubuntu.com/docking.js", FRAC_MARK, [
+        ("        if (!this.visible)\n            return false;\n\n        switch (this.dockState) {\n",
+         "        // " + FRAC_MARK + ": a fullscreen window on a fractionally scaled monitor is never scanned out\n"
+         "        // directly: the display hardware's scaling lands a few pixels off GNOME's (see sb4edge-dock-fix)\n"
+         "        if (this._monitor?.inFullscreen && this._monitor.geometry_scale % 1 !== 0)\n"
+         "            return true;\n"
+         "        if (!this.visible)\n            return false;\n\n        switch (this.dockState) {\n"),
     ]),
 ]
 

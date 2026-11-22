@@ -317,6 +317,14 @@ implemented but not tested on hardware; **[open]** not solved.
   Also: at 166 % the pointer at the bottom sits in the last physical pixel row, outside the dock's whole-pixel area
   (edge watch), and a resting touchpad finger jumps the pointer 15-50 px when it lifts (tolerance zone above the
   dock). All in `overlay/gnome/sb4edge-dock-fix`, re-applied by an apt hook.
+- **Fullscreen windows on the fractionally scaled panel jump when the top bar appears** [verified 2026-11-21]: direct
+  scanout lets the display hardware do the 1.667x scaling, a few pixels off GNOME's own; the picture shifts when GNOME
+  composites again (top bar/dock shown). Fix: no unredirection for fullscreen windows on fractionally scaled monitors
+  (dock-fix patch 5); integer-scaled monitors keep direct scanout.
+- **Page flips failing after login with two monitors** [verified 2026-11-21]: the login screen's default layout
+  leaves hardware planes on other CRTCs than the user's session expects; mutter then moves a plane between CRTCs in
+  one commit, the DRM core refuses ("switching CRTC directly", EINVAL), and frames drop until a full modeset. Giving
+  the login screen the user's monitors.xml (/etc/xdg/monitors.xml) avoids it; `sb4edge-gnome-persist` keeps it in sync.
 - **Overview Esc:** `snapd-search-provider@canonical.com` (declares GNOME 48-49) breaks Esc on GNOME 51; disabled.
   `sb4edge-overview-close` adds Esc / empty-click close and workspace-preview click to switch [verified].
 - Extensions declare GNOME versions; `sb4edge-gnome-persist` adds the running major to the project's own extensions
