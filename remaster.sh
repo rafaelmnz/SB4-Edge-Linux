@@ -196,11 +196,13 @@ install -Dm644 /work/overlay/sb4edge-edid-dracut.conf "$B/etc/dracut.conf.d/sb4e
 # Adreno X1-85 microcode in the initramfs: msm probes there, and without it "failed to load gen70500_sqe.fw" was
 # logged at every boot and the GPU only came up after the switch to the real root.
 install -Dm644 /work/overlay/sb4edge-gpu-dracut.conf "$B/etc/dracut.conf.d/sb4edge-gpu.conf"
-# alsa-base's "install snd" line (preloads snd-seq) fails at every boot: in the initramfs modprobe is busybox, which
+# alsa-base's "install snd*" lines (preload snd-seq / OSS emulation) fail at every boot: in the initramfs modprobe is busybox, which
 # rejects --ignore-install/--use-blacklist. snd-seq autoloads through its devname:snd/seq alias anyway.
 sb4edge_cleanup() { # sb4edge_cleanup <root>: also re-run on the standard layer after its upgrade
-	[ ! -f "$1/etc/modprobe.d/alsa-base.conf" ] || sed -i '/^install snd \/sbin\/modprobe --ignore-install snd /d' "$1/etc/modprobe.d/alsa-base.conf"
-	if grep -qs "^install snd " "$1/etc/modprobe.d/alsa-base.conf"; then echo "alsa-base fix failed in $1"; exit 1; fi
+	# The snd-pcm/snd-mixer/snd-seq/snd-rawmidi lines fail the same way; they only preload the OSS emulation
+	# modules (snd-pcm-oss, snd-mixer-oss, snd-seq-oss), which Ubuntu blacklists anyway.
+	[ ! -f "$1/etc/modprobe.d/alsa-base.conf" ] || sed -i -E '/^install snd(-pcm|-mixer|-seq|-rawmidi)? \/sbin\/modprobe --ignore-install /d' "$1/etc/modprobe.d/alsa-base.conf"
+	if grep -qsE "^install snd(-pcm|-mixer|-seq|-rawmidi)? " "$1/etc/modprobe.d/alsa-base.conf"; then echo "alsa-base fix failed in $1"; exit 1; fi
 	# libmalcontent-common ships D-Bus files for the malcontent-webd/timerd daemons, which are not installed (nor
 	# their system users): dbus-daemon logged "Invalid user name" at every boot. dpkg excludes keep them out.
 	rm -f "$1"/usr/share/dbus-1/system-services/org.freedesktop.Malcontent{Web1,Timer1,Timer1.ExtensionAgent}.service \

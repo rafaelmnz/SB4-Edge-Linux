@@ -94,6 +94,7 @@ struct sgb_bat {
 	bool	present;
 	bool	ac_online;
 	bool	have_data;
+	int	pending_charge;		/* sb4edge: a jump not yet confirmed by a second poll (µAh, -1 = none) */
 };
 
 /* ------------------------------------------------------------------ */
@@ -159,6 +160,32 @@ static int sgb_ec_read_block(struct i2c_client *c, u8 reg, u8 *buf, int n)
 			return ret;
 	}
 	return 0;
+}
+
+/*
+ * sb4edge: the EC is read one byte per mailbox transaction, so a multi-byte field can be torn: the EC updates it
+ * between two byte reads, or another driver (keyboard, USB-C) uses the mailbox in between. That gave "remaining
+ * capacity" values like 128 mAh (4 %) or more than full (100 %) for one poll. Read the field twice and accept it
+ * only when both reads agree.
+ */
+static int sgb_ec_read_block_stable(struct i2c_client *c, u8 reg, u8 *buf, int n)
+{
+	u8 again[8];
+	int tries, ret;
+
+	if (n > (int)sizeof(again))
+		return -EINVAL;
+	for (tries = 0; tries < 4; tries++) {
+		ret = sgb_ec_read_block(c, reg, buf, n);
+		if (ret)
+			return ret;
+		ret = sgb_ec_read_block(c, reg, again, n);
+		if (ret)
+			return ret;
+		if (!memcmp(buf, again, n))
+			return 0;
+	}
+	return -EAGAIN;
 }
 
 static int sgb_ram_write(struct i2c_client *c, u16 addr, u8 data)
@@ -330,16 +357,16 @@ static void sgb_poll_work(struct work_struct *w)
 	ret = sgb_ec_read_byte(b->client, EC_REG_B1ST, &b1st);
 	if (ret)
 		goto err;
-	ret = sgb_ec_read_block(b->client, EC_REG_B1RR, rr, 4);
+	ret = sgb_ec_read_block_stable(b->client, EC_REG_B1RR, rr, 4);
 	if (ret)
 		goto err;
-	ret = sgb_ec_read_block(b->client, EC_REG_B1PV, pv, 4);
+	ret = sgb_ec_read_block_stable(b->client, EC_REG_B1PV, pv, 4);
 	if (ret)
 		goto err;
-	ret = sgb_ec_read_block(b->client, EC_REG_B1AF, af, 4);
+	ret = sgb_ec_read_block_stable(b->client, EC_REG_B1AF, af, 4);
 	if (ret)
 		goto err;
-	ret = sgb_ec_read_block(b->client, EC_REG_B1VL, vl, 4);
+	ret = sgb_ec_read_block_stable(b->client, EC_REG_B1VL, vl, 4);
 	if (ret)
 		goto err;
 
@@ -367,6 +394,25 @@ static void sgb_poll_work(struct work_struct *w)
 		design_c = 0;
 	if (fullchg_c == 0xFFFF)
 		fullchg_c = 0;
+
+	/*
+	 * sb4edge: the charge moves by a few mAh per 5 s poll. A jump of more than 5 % of the full charge is only
+	 * accepted once the next poll sees about the same value again; until then the previous reading stays.
+	 */
+	if (b->have_data && fullchg_c) {
+		int new_charge = (int)remaining * 1000, step = (int)fullchg_c * 1000 / 20;
+
+		if (abs(new_charge - b->charge_now) > step) {
+			if (b->pending_charge < 0 || abs(new_charge - b->pending_charge) > step / 5) {
+				b->pending_charge = new_charge;
+				remaining = b->charge_now / 1000;
+			} else {
+				b->pending_charge = -1;
+			}
+		} else {
+			b->pending_charge = -1;
+		}
+	}
 
 	b->present            = !!(flags & FLAG_B1EX);
 	b->ac_online          = !!(flags & FLAG_ACEX);
@@ -424,6 +470,10 @@ static enum power_supply_property sgb_props[] = {
 	POWER_SUPPLY_PROP_CHARGE_NOW,
 	POWER_SUPPLY_PROP_CHARGE_FULL,
 	POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN,
+	POWER_SUPPLY_PROP_POWER_NOW,
+	POWER_SUPPLY_PROP_ENERGY_NOW,
+	POWER_SUPPLY_PROP_ENERGY_FULL,
+	POWER_SUPPLY_PROP_ENERGY_FULL_DESIGN,
 	POWER_SUPPLY_PROP_CAPACITY,
 	POWER_SUPPLY_PROP_MODEL_NAME,
 	POWER_SUPPLY_PROP_MANUFACTURER,
@@ -483,6 +533,25 @@ static int sgb_get_prop(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN:
 		val->intval = b->charge_full_design;
 		break;
+	/*
+	 * sb4edge: energy (µWh) = charge × design voltage, the conversion UPower does itself; tools that only read
+	 * energy_* (Resources: "Design Capacity N/A") get the values too.
+	 */
+	case POWER_SUPPLY_PROP_POWER_NOW:	/* µW; with energy_* present UPower takes the rate from here */
+		val->intval = (int)div_s64((s64)abs(b->current_now) * b->voltage_now, 1000000);
+		break;
+	case POWER_SUPPLY_PROP_ENERGY_NOW:
+	case POWER_SUPPLY_PROP_ENERGY_FULL:
+	case POWER_SUPPLY_PROP_ENERGY_FULL_DESIGN: {
+		int charge = prop == POWER_SUPPLY_PROP_ENERGY_NOW ? b->charge_now :
+			     prop == POWER_SUPPLY_PROP_ENERGY_FULL ? b->charge_full : b->charge_full_design;
+
+		if (b->voltage_design > 0 && charge > 0)
+			val->intval = (int)div_s64((s64)charge * b->voltage_design, 1000000);
+		else
+			ret = -ENODATA;
+		break;
+	}
 	case POWER_SUPPLY_PROP_CAPACITY:
 		if (b->charge_full > 0)
 			val->intval = clamp_t(int,
@@ -555,6 +624,7 @@ static int sgb_probe(struct i2c_client *client)
 
 	b->client = client;
 	mutex_init(&b->lock);
+	b->pending_charge = -1;
 	INIT_DELAYED_WORK(&b->poll, sgb_poll_work);
 
 	/* Probe the EC with a single-byte read to validate we're talking

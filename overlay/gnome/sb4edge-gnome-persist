@@ -11,7 +11,8 @@ Run after every dpkg run (/etc/apt/apt.conf.d/99-sb4edge-gnome-persist) and at e
   3. The login screen gets the users' display configuration (newest ~/.config/monitors.xml -> /etc/xdg), so the
      hand-over from the login screen keeps the same hardware plane assignment (otherwise page flips failed for
      minutes after login with two monitors).
-  4. sb4edge's own GNOME Shell extensions (and the patched hidetopbar) declare the running GNOME Shell version, so a
+  4. Softer edges for GTK right-click/app menus in each user's gtk.css (and /etc/skel).
+  5. sb4edge's own GNOME Shell extensions (and the patched hidetopbar) declare the running GNOME Shell version, so a
      GNOME major upgrade doesn't silently disable them (the shell only loads extensions listing its version; one
      that really breaks is shown as an error and the shell keeps running).
 """
@@ -133,6 +134,36 @@ def greeter_monitors():
     log(f"{dst}: login screen uses the display setup from {found[0]}")
 
 
+MENU_CSS = {"gtk-4.0": "/* sb4edge-smooth-menus: right-click and app menus with a hairline outline and the shadow kept under the menu\n   (Yaru's 23 % black outline, and any side shadow, read as a grey bar on a white window behind the menu). */\npopover.menu.background > contents,\npopover.menu.background > arrow {\n  border-color: rgba(0, 0, 0, 0.13);\n  box-shadow: 0 2px 3px -1px rgba(0, 0, 0, 0.10);\n  outline: 1px solid rgba(0, 0, 0, 0.09);\n  outline-offset: -1px;\n  /* 99.5 % opaque on purpose: a fully opaque menu makes GTK report an opaque region slightly larger than what it\n     paints (at 150 %), and GNOME then skips drawing the window behind that strip, so the wallpaper shows through */\n  background-color: rgba(250, 250, 250, 0.995);\n}\n@media (prefers-color-scheme: dark) {\n  popover.menu.background > contents,\n  popover.menu.background > arrow {\n    border-color: rgba(255, 255, 255, 0.08);\n    box-shadow: 0 2px 3px -1px rgba(0, 0, 0, 0.4);\n    outline: 1px solid rgba(255, 255, 255, 0.08);\n    outline-offset: -1px;\n    background-color: rgba(29, 29, 29, 0.995);\n  }\n}\n",
+            "gtk-3.0": '/* sb4edge-smooth-menus: same softer menu edges for GTK3 apps (Yaru: 1 px #c7c7c7 / 23 % outline, hard shadow). */\nmenu, .menu, .context-menu {\n  border-color: rgba(0, 0, 0, 0.13);\n}\npopover.background.menu, .csd popover.background.menu {\n  background-color: rgba(250, 250, 250, 0.995);\n  border-color: rgba(0, 0, 0, 0.13);\n  box-shadow: 0 2px 3px -1px rgba(0, 0, 0, 0.10);\n  outline: 1px solid rgba(0, 0, 0, 0.09);\n  outline-offset: -1px;\n}\n'}
+
+
+def smooth_menus():
+    """Softer right-click/app menu edges for GTK4 and GTK3 apps (faint outline, soft shadow instead of Yaru's 23 %
+    black outline and hard 1 px shadow, which read as a thin dark line). Added to each user's gtk.css and to
+    /etc/skel when missing; a line "sb4edge-smooth-menus: off" in that gtk.css keeps it out."""
+    homes = [h for h in glob.glob("/home/*") if os.path.isdir(os.path.join(h, ".config"))] + ["/etc/skel"]
+    for home in homes:
+        for ver, css in MENU_CSS.items():
+            path = os.path.join(home, ".config", ver, "gtk.css")
+            try:
+                cur = open(path).read()
+            except FileNotFoundError:
+                cur = ""
+            if "sb4edge-smooth-menus" in cur:
+                continue
+            d = os.path.dirname(path)
+            created = not os.path.isdir(d)
+            os.makedirs(d, exist_ok=True)
+            with open(path, "a") as f:
+                f.write(("\n" if cur and not cur.endswith("\n") else "") + css)
+            if home != "/etc/skel":
+                st = os.stat(home)
+                for q in ([os.path.dirname(d), d] if created else []) + [path]:
+                    os.chown(q, st.st_uid, st.st_gid)
+            log(f"{path}: softer menu edges added")
+
+
 def shell_major():
     try:
         out = subprocess.run(["gnome-shell", "--version"], capture_output=True, text=True).stdout
@@ -175,4 +206,5 @@ run(f"{LIB}/sb4edge-gdm-fp-overlay")
 pam_line()
 pam_skip_fprintd()
 greeter_monitors()
+smooth_menus()
 extension_versions()

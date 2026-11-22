@@ -69,6 +69,10 @@ cat <<EOF
 #     writable as before.
 # 18. These GNOME fixes are re-applied after package and release upgrades (sb4edge-gnome-persist), which also gives
 #     the login screen your display setup: with two monitors the desktop no longer stutters for minutes after login.
+# 20. Battery: the percentage no longer drops to 4 %/7 % or jumps to 100 % for a moment; Resources shows the design
+#     capacity (next boot).
+# 19. Right-click menus: smoother edges in all apps (no dark outline line); desktop icon menus no longer cut off. Boot: no more "Error running install command
+#     ... snd-pcm-oss" (sound OSS-emulation preload lines that fail in the initramfs are removed; next boot).
 set -eu
 KREL=$KREL
 KVER=$KVER
@@ -87,6 +91,7 @@ emb RES "$RES"
 emb NPU out/sb4_cdsp_stats.ko
 emb IRIS out/qcom-iris.ko
 emb ATH out/ath12k.ko
+emb SGBAT out/samsung_galaxybook_battery.ko
 emb GKERN overlay/sleep/zz-sb4edge-kernel.cfg
 emb GREFI refind/zz-sb4edge-refind.cfg
 emb DOCK overlay/gnome/sb4edge-dock-fix
@@ -286,6 +291,15 @@ elif put ATH "/usr/lib/modules/$KREL/updates/ath12k.ko" 644; then
 	echo "  the Wi-Fi fix takes effect at the next boot"
 fi
 
+# Battery driver with consistent EC reads (same kernel check; reloading it would drop the keyboard backlight driver
+# too, so it takes effect at the next boot).
+if [ "$kv" != "$KVER" ]; then
+	echo "skipped: battery driver fix (built for linux-image-$KREL $KVER; installed: ${kv:-none})"
+elif put SGBAT "/usr/lib/modules/$KREL/updates/samsung_galaxybook_battery.ko" 644; then
+	depmod -a "$KREL"
+	echo "  the battery fix takes effect at the next boot"
+fi
+
 # Silent boot: the sb4edge kernel as GRUB's top-level entry, no console cursor.
 grub=0
 put GKERN /etc/default/grub.d/zz-sb4edge-kernel.cfg 644 && grub=1
@@ -360,6 +374,15 @@ else
 		grep -qs '^ENABLED=no' /etc/default/sb4edge-windows-mount && echo "  Windows drive: kept writable (ENABLED=no)" ||
 			echo "  Windows drive: read-only from the next boot; right-click a folder in Files -> Unlock folder to write there"
 	fi
+fi
+
+# Sound: drop alsa-base's OSS-emulation preload lines, which fail at every boot in the initramfs.
+A=/etc/modprobe.d/alsa-base.conf
+if grep -qsE '^install snd(-pcm|-mixer|-seq|-rawmidi)? /sbin/modprobe --ignore-install ' "$A"; then
+	backup "$A"
+	sed -i -E '/^install snd(-pcm|-mixer|-seq|-rawmidi)? \/sbin\/modprobe --ignore-install /d' "$A"
+	echo "updated: $A (OSS preload lines that failed at boot removed)"; changed=1
+	if command -v update-initramfs >/dev/null; then update-initramfs -u >/dev/null 2>&1 && echo "  initramfs rebuilt (next boot)"; fi
 fi
 
 if command -v systemctl >/dev/null; then

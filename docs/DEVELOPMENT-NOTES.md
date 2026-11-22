@@ -772,3 +772,40 @@ Windows qcdxkm8380.sys: logging stripped; AUX diag escape at sub_140115C40 calls
   0 failures. Toggling VRR at runtime did not reproduce it, so the panel's VRR patch is not the cause.
 - geoclue (location) timed out after 90 s at boot (night light and the weather extension then failed to get a
   location); started by hand it is ready in 2 s. Debug drop-in added to catch the boot-time cause.
+- Boot: "Error running install command '/sbin/modprobe --ignore-install snd-pcm ...'" 10x per boot (2026-11-22):
+  alsa-base's install lines for snd-pcm/snd-mixer/snd-seq/snd-rawmidi fail in the initramfs (busybox-style modprobe
+  rejects --ignore-install, the same failure as the "install snd" line removed on 2026-11-18). They only preload the
+  OSS emulation modules, which Ubuntu blacklists; removed (remaster sb4edge_cleanup, update script), initramfs rebuilt.
+- Desktop Icons (DING): an icon's right-click menu was cut off after a few items (seen for the drives in the right
+  column at 150 %; the mapped xdg_popup was 162x184 for a ~5-item menu). The menu was parented to the desktop window
+  and pointed at the icon's allocation. Moving it to the right half (LEFT position) alone did not help; parenting it to
+  the icon itself, like DING's rename popup, did (popup 174x198, all items). Placed on the left, a top-row icon's menu
+  reached under the top bar (DING is a desktop window; its popups stay below GNOME's chrome), so the menu opens below
+  the icon (GTK flips it up near the bottom) and points at the icon's inner third so it fits next to a screen edge with
+  its rounded corners. sb4edge-dock-fix patch 6. (A thin dark bar next to the menu was the edge of a window behind.)
+- Menus: "a thin black vertical bar" at the left of a right-click menu (2026-11-22). Zoomed screenshots: Yaru draws
+  every popup menu with a 1 px rgba(0,0,0,0.23) outline and a hard 0 1px 2px shadow; on a light window behind the menu
+  that reads as a dark line. Tried with the user over five rounds (screenshots compared pixel by pixel): a wide soft shadow
+  (0 6px 18px) or a deep below-only one shows as a grey band on a white window behind the menu; no shadow is too flat;
+  a 1 px box-shadow spread as hairline made GTK cut off the menu's last item at 150 %; border-color had no visible
+  effect. Final for GTK4 (popover.menu) and GTK3 (menu, .context-menu, popover.menu): `outline: 1px solid
+  rgba(0,0,0,.09); outline-offset: -1px` plus `box-shadow: 0 2px 3px -1px rgba(0,0,0,.10)` (dark variant via
+  prefers-color-scheme), and a 99.5 % opaque menu background. The last "bar" only appeared while a menu was open
+  and showed the wallpaper colour through the window behind: with a fully opaque background GTK reports the popup's
+  opaque region slightly larger than what it paints at 150 %, so mutter culled (did not draw) the window behind that
+  strip. That was also the original "thin black bar". Alpha 0.995 avoids the opaque region; it looks identical.
+in each user's gtk.css and /etc/skel,
+  kept by sb4edge-gnome-persist (a "sb4edge-smooth-menus: off" line opts out). GNOME Shell's own menus already use a
+  light #ededed outline and a soft shadow.
+- Battery (2026-11-22): Resources showed "Design Capacity N/A" (it reads energy_full_design; the driver only had
+  charge_*), and the percentage dropped to 4 %/7 % or jumped to 100 % for a poll (UPower history 61, 56, 55, 56,
+  100, 56 within a minute; no "EC read failed" logged, so the bad values came from successful reads). Cause: the
+  4-byte EC fields are read byte by byte through the shared mailbox and can be torn. samsung_galaxybook_battery:
+  sgb_ec_read_block_stable (two identical reads, up to 4 tries), a jump of more than 5 % held until the next poll
+  confirms it, energy_now/full/full_design (charge x voltage_min_design) and power_now. Reload needs
+  `modprobe -r samsung_galaxybook_kbd samsung_galaxybook_battery` (kbd uses sgb_ec_excmd). After it: 60.5 Wh design /
+  49.7 Wh full / 82 % health in UPower, rate 12.7 W, 120 samples over 4 min without a jump.
+- hidetopbar (2026-11-22, battery): secondary top bars follow the pointer through the cursor tracker's
+  position-invalidated signal instead of a 75 ms poll (13 wakeups/s per extra monitor), with a one-shot 500 ms
+  re-check while a menu of a revealed bar is open; monitors-changed rebuilds only the secondary panels whose monitor
+  changed geometry or scale (each full rebuild left work behind). See the extension's CHANGELOG.md.

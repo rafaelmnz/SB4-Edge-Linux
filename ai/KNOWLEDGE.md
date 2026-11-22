@@ -65,6 +65,13 @@ implemented but not tested on hardware; **[open]** not solved.
 - Status: EC B1ST bit 3 is the ACPI _BST "charge limiting" bit. At the limit the EC sets it without the
   charge/discharge bits; the driver used to report "Charging" (GNOME showed the charging icon with Preserve battery
   health on). Fix: discharge/charge bits first, then bit 3 = "Not charging" on AC (else "Discharging") [verified].
+- Torn EC reads [verified 2026-11-22]: the EC is read one byte per mailbox transaction, so a multi-byte field can
+  be torn (the EC updates it between byte reads, or the keyboard/USB-C code uses the mailbox in between): the
+  percentage briefly showed 4 %, 7 % or 100 % (UPower history: 61 -> 56 -> 100 -> 56). The driver now reads each
+  field twice and accepts it only when both agree, and holds a jump of more than 5 % until the next 5 s poll
+  confirms it. Also: energy_* (charge x design voltage) and power_now are exported, so tools that only read
+  energy values (Resources showed "Design Capacity N/A") work; UPower then takes the rate from power_now.
+  No EC register for the cycle count is known (Resources: "Charge Cycles N/A").
 - Charging hardware: two **S2MM006** PD controllers (Samsung PDIC) at 0x33 on two I2C buses; **ISL9241** charger
   (0x09) and SBS gauge (0x0b) on i2c20. The PD controller waits for the host to close the **charger input switch**
   (cmd 0x12) after attach, as Windows EmuEc.sys does; without it a charger plugged after boot is ignored.
@@ -326,6 +333,10 @@ implemented but not tested on hardware; **[open]** not solved.
   leaves hardware planes on other CRTCs than the user's session expects; mutter then moves a plane between CRTCs in
   one commit, the DRM core refuses ("switching CRTC directly", EINVAL), and frames drop until a full modeset. Giving
   the login screen the user's monitors.xml (/etc/xdg/monitors.xml) avoids it; `sb4edge-gnome-persist` keeps it in sync.
+- **Dark bar next to GTK popup menus at 150 %** [verified 2026-11-22]: with an opaque background GTK reports the
+  popup's opaque region slightly larger than what it paints; mutter then culls the window behind that strip and the
+  wallpaper shows through. A 99.5 % opaque menu background (user gtk.css, kept by sb4edge-gnome-persist) avoids it.
+  A box-shadow spread used as a hairline made GTK cut off the menu's last item; an inside `outline` does not.
 - **Overview Esc:** `snapd-search-provider@canonical.com` (declares GNOME 48-49) breaks Esc on GNOME 51; disabled.
   `sb4edge-overview-close` adds Esc / empty-click close and workspace-preview click to switch [verified].
 - Extensions declare GNOME versions; `sb4edge-gnome-persist` adds the running major to the project's own extensions

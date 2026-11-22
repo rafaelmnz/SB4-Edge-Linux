@@ -15,9 +15,12 @@
 #    in the last physical pixel row, which the dock's (whole-logical-pixel) area can miss. Whenever the window below
 #    redraws (Firefox does constantly), the shell re-picks and the dock loses hover and hides with the pointer still
 #    on the edge, or never shows at all. A pointer within 3 px of the screen edge, in line with the dock's icons
-#    (or on the shown dock, 40 px beside it or 70 px above it), now counts as hovering; a 150 ms watch reveals the hidden dock after show-delay
+#    (or on the shown dock, 40 px beside it or 70 px above it), now counts as hovering; a watch reveals the hidden dock after show-delay
 #    even if its strip never got hover, a pointer back on the icons during the hide delay cancels the hide
 #    (the window below can get the pointer there), and a 100 ms check hides the dock once the pointer really leaves.
+#    3b (battery): the watch used to tick every 150 ms forever, per dock (6-7 wakeups/s while idle). It now sleeps
+#    until the pointer moves (cursor tracker 'position-invalidated', no events while it is still), the dock starts
+#    hiding or its hover changes, and ticks only while it has something to do.
 # 4. Ubuntu Dock docking.js: with the top bar hidden (hidetopbar) and the dock hidden, a maximized window covers the
 #    whole monitor, so mutter unredirects it (direct scanout). The dock only blocked that for true fullscreen windows,
 #    so over a maximized Firefox the screen kept switching between scanout and compositing as the dock appeared and
@@ -27,6 +30,10 @@
 #    display hardware doing the scaling, which lands a few pixels off GNOME's own scaling: fullscreen Citrix/RustDesk
 #    jumped up and left whenever the top bar or the dock appeared (GNOME composites again). Unredirection is now
 #    blocked for fullscreen windows on fractionally scaled monitors (integer-scaled monitors keep direct scanout).
+# 6. Desktop Icons (DING) fileItemMenu.js: an icon's right-click menu was attached to the desktop window and pointed
+#    at the icon's allocation; it came out too short (cut off after a few items) and, at the right edge, did not fit.
+#    It is now attached to the icon itself, like DING's rename popup, opens below it (flipped up near the bottom) so it
+#    stays clear of the top bar, and points at the icon's inner third so it fits next to a screen edge.
 import os
 import shutil
 import sys
@@ -35,8 +42,119 @@ EXT = "/usr/share/gnome-shell/extensions"
 DOCK_MARK = "sb4edge-dock-fix"
 APPIND_MARK = "sb4edge-appindicator-fix"
 EDGE_MARK = "sb4edge-dock-edge-hover"
+EDGE_EVENT_MARK = "sb4edge-dock-edge-event"
 UNREDIR_MARK = "sb4edge-dock-unredirect"
 FRAC_MARK = "sb4edge-dock-unredirect-fractional"
+DING_MARK = "sb4edge-ding-menu-side"
+
+# Patch 3b: texts as patch 3 leaves them (old) and their event-driven replacements (new).
+EDGE_CTOR_OLD = """        this._edgeDwell = 0;
+        this._edgeWatchId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 150, () => {
+            this._edgeWatchTick();
+            return GLib.SOURCE_CONTINUE;
+        });
+"""
+EDGE_CTOR_NEW = """        this._edgeDwell = 0;
+        // """ + EDGE_EVENT_MARK + """: no fixed polling; pointer motion, a hide or a hover change wakes the watch
+        this._edgeWatchId = 0;
+        this._cursorTracker = global.backend.get_cursor_tracker();
+        this._cursorMovedId = this._cursorTracker.connect('position-invalidated', () => this._edgeWatchWake());
+        this.connect('hiding', () => this._edgeWatchWake());
+        this._box.connect('notify::hover', () => this._edgeWatchWake());
+"""
+EDGE_TICK_OLD = """    _edgeWatchTick() {
+        const [, , mods] = global.get_pointer();
+        const buttons = Clutter.ModifierType.BUTTON1_MASK | Clutter.ModifierType.BUTTON2_MASK |
+            Clutter.ModifierType.BUTTON3_MASK;
+        if (!this.autohideEnabled || this._ignoreHover || Main.overview.visibleTarget ||
+            Main.modalCount > 0 || (mods & buttons) ||
+            (!DockManager.settings.autohideInFullscreen && this._monitor?.inFullscreen)) {
+            this._edgeDwell = 0;
+            return;
+        }
+        // back on the icons during the hide delay: the dock is still drawn there but may not get hover
+        // (the window below gets the pointer), so cancel the hide
+        if (this.dockState === State.HIDING && this._pointerOnDock()) {
+            this._show();
+            this._pointerAtDockEdge();
+            return;
+        }
+        if (this.dockState !== State.HIDDEN || !this._pointerAtDockEdgeNow()) {
+            this._edgeDwell = 0;
+            return;
+        }
+        this._edgeDwell += 150;
+        if (this._edgeDwell < DockManager.settings.showDelay * 1000)
+            return;
+        this._edgeDwell = 0;
+        this._show();
+        this._pointerAtDockEdge();   // arms the check that hides it again once the pointer leaves
+    }
+
+"""
+EDGE_TICK_NEW = """    // """ + EDGE_EVENT_MARK + """: true while the watch has something to do: the pointer on the hidden dock's
+    // edge (show after show-delay), on the icons while the dock hides (cancel the hide), or on the shown dock
+    // without hover (a hide is about to start)
+    _edgeWatchNeeded() {
+        const [, , mods] = global.get_pointer();
+        const buttons = Clutter.ModifierType.BUTTON1_MASK | Clutter.ModifierType.BUTTON2_MASK |
+            Clutter.ModifierType.BUTTON3_MASK;
+        if (!this.autohideEnabled || this._ignoreHover || Main.overview.visibleTarget ||
+            Main.modalCount > 0 || (mods & buttons) ||
+            (!DockManager.settings.autohideInFullscreen && this._monitor?.inFullscreen))
+            return false;
+        if (this.dockState === State.HIDDEN)
+            return this._pointerAtDockEdgeNow();
+        if (this.dockState === State.HIDING)
+            return this._pointerOnDock();
+        if (this.dockState === State.SHOWN)
+            return !this._box?.hover && this._pointerOnDock();
+        return false;
+    }
+
+    _edgeWatchWake() {
+        if (this._edgeWatchId || !this._box || !this._edgeWatchNeeded())
+            return;
+        this._edgeWatchId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 150, () => {
+            if (this._edgeWatchTick())
+                return GLib.SOURCE_CONTINUE;
+            this._edgeWatchId = 0;
+            this._edgeDwell = 0;
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    // returns whether to keep ticking
+    _edgeWatchTick() {
+        if (!this._edgeWatchNeeded())
+            return false;
+        // back on the icons during the hide delay: the dock is still drawn there but may not get hover
+        // (the window below gets the pointer), so cancel the hide
+        if (this.dockState === State.HIDING) {
+            this._show();
+            this._pointerAtDockEdge();
+            return false;
+        }
+        if (this.dockState !== State.HIDDEN)
+            return true;   // shown without hover: wait for the hide to start
+        this._edgeDwell += 150;
+        if (this._edgeDwell < DockManager.settings.showDelay * 1000)
+            return true;
+        this._edgeDwell = 0;
+        this._show();
+        this._pointerAtDockEdge();   // arms the check that hides it again once the pointer leaves
+        return false;
+    }
+
+"""
+EDGE_DESTROY_OLD = """        if (this._edgeWatchId)
+            GLib.source_remove(this._edgeWatchId);
+        this._edgeWatchId = 0;
+"""
+EDGE_DESTROY_NEW = EDGE_DESTROY_OLD + """        if (this._cursorMovedId)
+            this._cursorTracker.disconnect(this._cursorMovedId);
+        this._cursorMovedId = 0;
+"""
 
 PATCHES = [
     (f"{EXT}/ubuntu-dock@ubuntu.com/theming.js", DOCK_MARK, [
@@ -180,6 +298,12 @@ PATCHES = [
          "            GLib.source_remove(this._edgeWatchId);\n"
          "        this._edgeWatchId = 0;\n"),
     ]),
+    # applies on top of EDGE_MARK (installed systems already have it)
+    (f"{EXT}/ubuntu-dock@ubuntu.com/docking.js", EDGE_EVENT_MARK, [
+        (EDGE_CTOR_OLD, EDGE_CTOR_NEW),
+        (EDGE_TICK_OLD, EDGE_TICK_NEW),
+        (EDGE_DESTROY_OLD, EDGE_DESTROY_NEW),
+    ]),
     (f"{EXT}/ubuntu-dock@ubuntu.com/docking.js", UNREDIR_MARK, [
         ("        case State.SHOWN:\n            return !!this._monitor?.inFullscreen;\n",
          "        case State.SHOWN:\n"
@@ -193,6 +317,19 @@ PATCHES = [
          "        if (this._monitor?.inFullscreen && this._monitor.geometry_scale % 1 !== 0)\n"
          "            return true;\n"
          "        if (!this.visible)\n            return false;\n\n        switch (this.dockState) {\n"),
+    ]),
+    (f"{EXT}/ding@rastersoft.com/app/fileItemMenu.js", DING_MARK, [
+        ("        menuPopover.set_parent(grid.Window);\n        menuPopover.set_pointing_to(fileItem.container.get_allocation());\n",
+         "        // " + DING_MARK + ": attached to the icon itself, like the rename popup (attached to the window and\n"
+         "        // pointed at the icon's allocation, the menu came out too short and was cut off; see sb4edge-dock-fix);\n"
+         "        // below the icon (GTK flips it up near the bottom), so it never reaches under the top bar\n"
+         "        menuPopover.set_parent(fileItem.container);\n"
+         "        {   // point at the inner third of the icon: centred on an icon at a screen edge the menu would not fit\n"
+         "            const w = fileItem.container.get_width(), h = fileItem.container.get_height();\n"
+         "            const third = Math.max(1, Math.round(w / 3));\n"
+         "            const rect = new Gdk.Rectangle({x: fileItem.relativeX > 0.5 ? 0 : w - third, y: 0, width: third, height: h});\n"
+         "            menuPopover.set_pointing_to(rect);\n"
+         "        }\n"),
     ]),
 ]
 
