@@ -809,3 +809,80 @@ in each user's gtk.css and /etc/skel,
   position-invalidated signal instead of a 75 ms poll (13 wakeups/s per extra monitor), with a one-shot 500 ms
   re-check while a menu of a revealed bar is open; monitors-changed rebuilds only the secondary panels whose monitor
   changed geometry or scale (each full rebuild left work behind). See the extension's CHANGELOG.md.
+- GNOME extensions merged (2026-11-21): no-screenshot-box-xr, tesseract-ocr-xr, sb4edge-overview-close and
+  rustdesk-window are now one extension, sb4edge-tweaks-xr@sb4edge (features/<name>.js, one feature-<name> switch
+  each in its preferences, toggled at runtime; the screenshot CSS is loaded only while that feature is on). Same
+  setting key names, so a dconf dump of the old paths loads into /org/gnome/shell/extensions/sb4edge-tweaks-xr/.
+  Nested headless shell: all features start, each switch removes and restores its changes (OCR button, panel style,
+  D-Bus object), disable/enable clean, no JS errors. The accessibility icon (shown by GNOME whenever Large Text is
+  on, even with "Always Show" off) was first hidden by Hide Accessibility Menu (hideaccessibilitymenu@boni.scot, EGO
+  v7, reviewed), then replaced by the `accessibility` feature (see the conflict review below).
+- Extension conflict review (2026-11-21): shell log of the reference laptop + what every enabled extension patches.
+  (1) hidetopbar-multimonitor's extra top bars are full Panel.Panel instances, destroyed and rebuilt at every monitor
+  change and lock; GNOME's top bar items never disconnect from session-wide objects (session mode, Bluetooth / NM
+  clients), so destroyed items kept reacting: "already disposed" errors in calendar.js, bluetooth.js,
+  thunderbolt.js, popupMenu.js, backgroundApps.js at unlock. Reproduced headless with two virtual monitors (3
+  rebuilds + one session update: 50 errors). Fixed in sb4edge-tweaks-xr feature `panels`: while an extra panel is
+  built (Panel._init, and QuickSettings._setupIndicators, which continues after an await), connect/connect_after/
+  connectObject calls made by GNOME Shell code (first non-plumbing stack frame in resource:///org/gnome/shell/) to
+  objects outliving the panel are recorded and removed after its destroy; connectObject ones via
+  disconnectObject(owner), Gio.Settings / DBusProxy skipped (items run_dispose them). Result: 0 errors, 0 JS errors
+  with every laptop extension loaded. (2) Hide Accessibility Menu hid only the primary panel's a11y icon (each extra
+  top bar has its own), and the primary's _updatePanel (bound before extensions load) re-showed it on a session
+  update: feature `accessibility` covers every panel (Panel hooks + a session-mode handler) and replaced it.
+  (3) The screenshot feature reloaded its stylesheet on St.ThemeContext 'changed', which loading a stylesheet emits
+  itself: infinite recursion with hidetopbar loaded; now notify::theme. No other overlaps: Top Bar Organizer patches
+  Panel._addToPanelBox (we patch _init/_updatePanel, through one shared hook that restores only its own wrappers);
+  dock and hidetopbar unredirect calls are balanced.
+  (4) On the laptop after a re-login, 12 "this._settings is null" errors in dateMenu.js: the extra panels' date menus
+  connect to Main.messageTray, an actor, and `panels` first kept only non-actor objects. Session-wide actors are now
+  kept too: global.stage, window_group, top_window_group and every actor exported by main.js and layoutManager
+  (rebuilt per extra panel, as some are created lazily); the panel's own actors and its menus are destroyed with it.
+  Those actors are watched for 'destroy' (module-level WeakSets), so a cleanup still pending at shell shutdown skips
+  them. 0 errors after the fix.
+- Battery: idle wakeups of the GNOME extensions (2026-11-22). A probe extension loaded first wraps
+  GLib.timeout_add/timeout_add_seconds/idle_add and counts callbacks by origin over 30 s with the pointer still
+  (nested 2-monitor shell, every laptop extension, dock autohide on). Before: about 20 wakeups/s:
+  hidetopbar-multimonitor polled the pointer every 75 ms per extra top bar (531 per 40 s) and the dock edge watch of
+  sb4edge-dock-fix every 150 ms (266 per 40 s). After: 4 callbacks in 30 s (two one-shot intellihide checks), 14-17
+  stage paints.
+  - hidetopbar fork (secondaryVisibilityManager.js): the 75 ms poll is replaced by the same reveal logic on the cursor
+    tracker's 'position-invalidated' (once per pointer move, never while still; track_position does not exist on
+    GNOME 51), plus a one-shot 500 ms re-check only while a menu of the revealed bar is open (PopupMenuManager has no
+    menu-changed signal). multiMonitorManager.js: _rebuildSecondaryPanels keeps an extra top bar whose monitor
+    geometry and scale are unchanged instead of destroying and rebuilding all of them on every monitors-changed.
+  - sb4edge-dock-fix 3b (mark sb4edge-dock-edge-event, applied on top of the edge patch): the edge watch runs only
+    while it has something to do (pointer on the hidden dock's edge, on the icons while it hides, or on the shown dock
+    without hover), woken by pointer motion, the dock's 'hiding' signal and box hover changes. Tested headless with a
+    virtual pointer, also with the dock box non-reactive (no hover, as over a window): shows after the edge dwell,
+    hides on leave, timer back to 0.
+- Battery survey of the whole system (2026-11-22, laptop in use, per-process context switches and CPU over 30 s,
+  forks with perf sched:sched_process_fork, D-Bus with busctl monitor, disk writes from /proc/*/io; a sudo per
+  process in a measuring loop floods the journal and the system bus itself, so measure with one sudo).
+  - Wi-Fi: patches/kernel/0012. Every NetworkManager station dump (every 3-6 s) still blocked 3 s with 0011
+    applied. kprobe on ath12k_mac_get_fw_stats (struct ath12k is past 16 KiB: num_started_vdevs at +0x4000+2856,
+    found in the disassembly of the reply handler) showed num_started_vdevs=2 with one STA vdev; the firmware
+    replies with one vdev, so WMI_REQUEST_VDEV_STAT never completed. ath12k_mac_vdev_start_restart() counts a
+    restart as another start; restarts come from a channel switch of an up vdev (DFS AP: CTRL-EVENT-STARTED-
+    CHANNEL-SWITCH at 23:32:26, 0 timeouts before it, first one 6 s after). 0012 counts only real starts.
+    Out-of-tree ath12k.ko rebuilt on the laptop (sparse clone of v7.4-rc3 + 0011 + 0012, headers tree; the 130
+    symbol CRCs ath12k_wifi7 imports match), in updates/ for the next boot, copied to out/ath12k.ko.
+  - sb4edge-fan (every 2 s) and sb4edge-backlight (every 3 s) started 2.5 processes/s each (cat, sleep, ls, and 5
+    loginctl calls per backlight pass, each a system-bus connection: the NameOwnerChanged churn). Now bash builtins
+    (read from sysfs, results in variables, pause = read -t on an idle pipe); the backlight watcher compares levels
+    in memory and asks loginctl (one call for Class/LockedHint/IdleHint) only when a level changed, retrying a
+    level seen outside an active session after 30 s. 1.0 and 0.4 wakeups/s, no children. Verified: a panel
+    change is recorded and the restore too.
+  - sb4edge-usbc: 173 -> ~100 wakeups/s. The 150 ms poll stays (a waiting sink shows 0x10 for ~0.33 s of every
+    3.7 s), the reads per poll drop: alt state (0x1A/0x57) only with a partner or DP on (cleared just before
+    StartAlt instead), once a second for a partner with no DP 10 s after the attach; the Source_Capabilities
+    block only once a sink or a waiting partner is seen, and not for a charger already switched in and settled.
+    The CC orientation read (0x12) stays on every poll of an empty port (it can be the only orientation reading).
+    Needs plug tests: device (USB 3 speed), charger (20 V request), DP adapter.
+  - geoclue's temporary debug drop-in (G_MESSAGES_DEBUG=Geoclue, laptop only) wrote ~60 KB/s to the journal and
+    rsyslog (long Wi-Fi scan dumps); geoclue started in 87 ms this boot, so it was removed (backup kept).
+  - Not ours, left as is: Claude Desktop renders in software (it disabled hardware acceleration itself:
+    isHardwareAccelerationAutoDisabled) and its GPU process used ~25 % of a core while animating; RustDesk
+    --server runs loginctl ~2.5 times/s and wakes ~300 times/s; Citrix ServiceRecord and AuthManagerDaemon ~120
+    wakeups/s each; ChatGPT's codex exec-server ~330/s; DING ~16/s (Wayland events). rustdesk-display-client
+    asks the extension for the RustDesk window every 3 s (could become a D-Bus signal).

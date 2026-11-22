@@ -69,6 +69,7 @@
 #define FRESH		1.0	/* s a partner or orientation reading stays valid */
 #define ORIENT_WAIT	5.0	/* s to wait for one before powering a device anyway */
 #define ALT_DELAY	1.5	/* s after a PD contract before letting the controller start alt modes */
+#define ALT_SETTLED	10.0	/* sb4edge: s after the attach with no DisplayPort partner found: alt state read once a second */
 #define INJECT		"/sys/bus/auxiliary/devices/pmic_glink.altmode.0/inject"
 #define DP_SID		0xff01
 /*
@@ -95,6 +96,7 @@ struct port {
 	int hpd;		/* partner's HPD */
 	int hpd_sent;		/* HPD state the kernel has */
 	double hpd_t;		/* last DP status/attention from the partner */
+	double alt_poll_t;	/* sb4edge: last alt state read once the attach has settled without DP */
 };
 
 static double last_tx = -TX_GAP;
@@ -422,13 +424,29 @@ static void altmode(struct port *p, double t)
 	int lo, hi, st;
 	uint32_t vdo;
 
+	/*
+	 * sb4edge: nothing to read without a partner (no attach in progress, no DP): saves two I2C reads per port
+	 * per poll while the port is empty. The progress bits are cleared just before alt modes are started, so
+	 * nothing left from an earlier partner is taken for this one.
+	 */
+	if (!p->attach_t && !p->dp_on)
+		return;
 	if (!p->alt_started && p->attach_t && t - p->attach_t >= ALT_DELAY) {
+		wr(p, 0x1A, 0);
+		wr(p, 0x57, 0);
 		if (!set_bits(p, 0x50, 0x01, 0x01)) {
 			p->alt_started = 1;
 			printf("port %d: alt modes started (0x50=0x%02x)\n", p->n, rd1(p, 0x50));
 		}
 	}
 	hpd_update(p, t);
+	/* sb4edge: a partner without DisplayPort (a charger) shows nothing more once discovery is over (within a
+	 * second or two of StartAlt); poll it once a second instead of on every poll (two I2C reads each). */
+	if (p->alt_started && !p->dp_pins && !p->dp_on && t - p->attach_t >= ALT_SETTLED) {
+		if (t - p->alt_poll_t < 1.0)
+			return;
+		p->alt_poll_t = t;
+	}
 	lo = rd1(p, 0x1A);
 	hi = rd1(p, 0x57);
 	if (lo <= 0 && hi <= 0)
@@ -665,6 +683,12 @@ static void step(struct port *p, double t)
 		return;
 	}
 	p->gone = 0;
+	/* sb4edge: no sink and nothing waiting: done, without reading the 32-byte capabilities block (same outcome
+	 * as below, where caps() only matters once a sink or a waiting partner is seen). */
+	if (s == 0 && t - p->source_t >= ORIENT_WAIT && t - p->sink_t >= FRESH && !(a & 0x10)) {
+		p->wait_t = 0;
+		return;
+	}
 	if (s == 0 && t - p->source_t >= ORIENT_WAIT && !caps(p, pdo)) {
 		/*
 		 * A sink, with no switch closed and no source seen for a while. Give
@@ -692,7 +716,8 @@ static void step(struct port *p, double t)
 		return;
 	}
 	p->wait_t = 0;
-	if (!(s & 0x01) && t - p->source_t < FRESH && caps(p, pdo)) {
+	/* sb4edge: (s != 0x0a || tx < MAX_TX) first: a charger already switched in and asked twice needs no read */
+	if (!(s & 0x01) && t - p->source_t < FRESH && (s != 0x0a || p->tx < MAX_TX) && caps(p, pdo)) {
 		/* A source that sent its capabilities, and we are not providing. */
 		if (s != 0x0a) {
 			/* keep the orientation: a USB-C monitor that charges us still needs it for DP */

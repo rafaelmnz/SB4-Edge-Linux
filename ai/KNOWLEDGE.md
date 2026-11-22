@@ -338,7 +338,36 @@ implemented but not tested on hardware; **[open]** not solved.
   wallpaper shows through. A 99.5 % opaque menu background (user gtk.css, kept by sb4edge-gnome-persist) avoids it.
   A box-shadow spread used as a hairline made GTK cut off the menu's last item; an inside `outline` does not.
 - **Overview Esc:** `snapd-search-provider@canonical.com` (declares GNOME 48-49) breaks Esc on GNOME 51; disabled.
-  `sb4edge-overview-close` adds Esc / empty-click close and workspace-preview click to switch [verified].
+  The `overview` feature of `sb4edge-tweaks-xr` adds Esc / empty-click close and workspace-preview click to switch [verified].
+- **sb4edge-tweaks-xr@sb4edge** [verified 2026-11-21, nested shell]: the project's own GNOME extensions in one (features
+  `screenshot`, `ocr`, `overview`, `rustdesk`, each a `feature-<name>` key, switchable at runtime; a feature that fails
+  to start is logged and skipped). Replaces no-screenshot-box-xr, tesseract-ocr-xr, sb4edge-overview-close and
+  rustdesk-window; settings schema org.gnome.shell.extensions.sb4edge-tweaks-xr (same key names as the old ones).
+  Also `panels` and `accessibility` (below). Must be listed before hidetopbar in enabled-extensions.
+- **Extra top bars leak** [verified 2026-11-21, nested 2-monitor shell]: hidetopbar-multimonitor builds a full
+  Panel.Panel per extra monitor and rebuilds it on every monitor change and lock. GNOME's top bar items (date menu,
+  Bluetooth, Thunderbolt, background apps, menus) connect to session-wide objects and never disconnect, so every
+  rebuild left handlers that later ran on destroyed items ("already disposed" at unlock; 50 errors after 3 rebuilds
+  and one session update). `panels` records GNOME's connections to outliving objects while an extra panel is built
+  (Panel._init and QuickSettings._setupIndicators) and removes them after it is destroyed (connectObject ones via
+  disconnectObject(owner)): 0 errors. Accessibility icon: GNOME shows it whenever Large Text etc. is on, ignoring
+  always-show-universal-access-status; each extra top bar has its own; the primary panel's _updatePanel re-shows it
+  on session updates. `accessibility` handles all panels (replaced hideaccessibilitymenu@boni.scot, which only hid
+  the primary panel's icon and lost it on a session update).
+  `panels` also keeps session-wide actors (global.stage, window groups, actors exported by main.js and layoutManager,
+  e.g. Main.messageTray: the extra date menus' leak) and skips actors destroyed at shell shutdown.
+- **ath12k station dumps 3 s after a channel switch** [fixed 2026-11-22, module in updates/ from next boot]:
+  ath12k_mac_vdev_start_restart() counted a vdev restart (channel switch, e.g. DFS) as another started vdev, so
+  WMI_REQUEST_VDEV_STAT waited for a second vdev reply that never comes: "time out while waiting for fw stats done"
+  every NetworkManager poll. patches/kernel/0012 (on top of 0011).
+- **sb4edge daemons without forks** [verified 2026-11-22]: sb4edge-fan and sb4edge-backlight use bash builtins only
+  in their loops (backlight asks loginctl only when a level changed); sb4edge-usbc reads 3-4 registers per empty
+  port per poll instead of 7 (alt state only with a partner, capabilities only with a sink) [plug tests pending].
+- **Extension idle wakeups** [verified 2026-11-22, nested 2-monitor shell]: from ~20/s to 4 per 30 s with the pointer
+  still. hidetopbar fork: pointer poll (75 ms per extra bar) replaced by the cursor tracker's 'position-invalidated'
+  (GNOME 51: fires once per move, none while still); extra bars kept when their monitor's geometry is unchanged.
+  sb4edge-dock-fix 3b (`sb4edge-dock-edge-event`): the dock edge watch (150 ms) runs only while needed, woken by
+  pointer motion, 'hiding' and hover changes. Probe: wrap GLib.timeout_add/idle_add in an extension loaded first.
 - Extensions declare GNOME versions; `sb4edge-gnome-persist` adds the running major to the project's own extensions
   after upgrades so they are not silently disabled.
 

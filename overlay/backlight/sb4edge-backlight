@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Remembers the panel and keyboard backlight levels chosen in the user session.
 #
 # systemd-backlight saves both at shutdown and restores them at boot, but what it saves is whatever is set at that
@@ -12,38 +12,64 @@ set -u
 STATE=/var/lib/sb4edge/backlight
 SYSD=/var/lib/systemd/backlight
 
+# One loginctl call per question (each is a process and a system-bus connection), and only when a level changed.
 user_active() {
+	local s props
 	s=$(loginctl show-seat seat0 -p ActiveSession --value 2>/dev/null) || return 1
 	[ -n "$s" ] || return 1
-	[ "$(loginctl show-session "$s" -p Class --value 2>/dev/null)" = user ] || return 1
-	[ "$(loginctl show-session "$s" -p LockedHint --value 2>/dev/null)" = no ] || return 1
-	[ "$(loginctl show-session "$s" -p IdleHint --value 2>/dev/null)" = no ]
+	props=$(loginctl show-session "$s" -p Class -p LockedHint -p IdleHint 2>/dev/null) || return 1
+	[[ $props == *Class=user* && $props == *LockedHint=no* && $props == *IdleHint=no* ]]
+}
+
+# The watch loop starts no processes while nothing changes (it runs every 3 s for as long as the laptop is on):
+# levels are read with bash's read and compared with the recorded ones in memory; the pause is a timed read on a
+# pipe nobody writes to. A level seen outside an active session (lock screen, idle dim) is asked about again only
+# after 30 s, or when it changes.
+declare -A RECORDED PENDING RETRY
+pause() { read -r -t "$1" -u "$PAUSE_FD" _ || :; }
+
+kbd_auto_off() {
+	local f
+	for f in /run/user/*/sb4edge-kbd-auto-off; do
+		[ -e "$f" ] && return 0
+	done
+	return 1
 }
 
 # $1 sysfs dir, $2 state name, $3 lowest level worth keeping (the panel is never saved off, the keyboard may be)
 record() {
-	v=$(cat "$1/brightness" 2>/dev/null) || return 0
+	local v= r=
+	read -r v < "$1/brightness" 2>/dev/null || return 0
 	case "$v" in '' | *[!0-9]*) return 0 ;; esac
 	[ "$v" -ge "$3" ] || return 0
-	[ "$v" = "$(cat "$STATE/$2" 2>/dev/null)" ] && return 0
-	printf '%s\n' "$v" >"$STATE/$2.tmp" && mv "$STATE/$2.tmp" "$STATE/$2"
+	if [ -z "${RECORDED[$2]+set}" ]; then
+		read -r r < "$STATE/$2" 2>/dev/null
+		RECORDED[$2]=$r
+	fi
+	[ "$v" = "${RECORDED[$2]}" ] && return 0
+	[ "$v" = "${PENDING[$2]-}" ] && [ "$SECONDS" -lt "${RETRY[$2]:-0}" ] && return 0
+	if ! user_active; then
+		PENDING[$2]=$v RETRY[$2]=$((SECONDS + 30))
+		return 0
+	fi
+	printf '%s\n' "$v" >"$STATE/$2.tmp" && mv "$STATE/$2.tmp" "$STATE/$2" && RECORDED[$2]=$v
+	unset 'PENDING[$2]'
 }
 
 case "${1:-}" in
 watch)
 	mkdir -p "$STATE"
+	exec {PAUSE_FD}<> <(:)
 	while :; do
-		if user_active; then
-			for b in /sys/class/backlight/*; do
-				[ -r "$b/brightness" ] && record "$b" "backlight:${b##*/}" 1
-			done
-			# Not while sb4edge-kbd-ambient has switched the keyboard off for bright light (not the user's choice).
-			ls /run/user/*/sb4edge-kbd-auto-off >/dev/null 2>&1 ||
-			for b in /sys/class/leds/*::kbd_backlight; do
-				[ -r "$b/brightness" ] && record "$b" "leds:${b##*/}" 0
-			done
-		fi
-		sleep 3
+		for b in /sys/class/backlight/*; do
+			[ -r "$b/brightness" ] && record "$b" "backlight:${b##*/}" 1
+		done
+		# Not while sb4edge-kbd-ambient has switched the keyboard off for bright light (not the user's choice).
+		kbd_auto_off ||
+		for b in /sys/class/leds/*::kbd_backlight; do
+			[ -r "$b/brightness" ] && record "$b" "leds:${b##*/}" 0
+		done
+		pause 3
 	done
 	;;
 commit)

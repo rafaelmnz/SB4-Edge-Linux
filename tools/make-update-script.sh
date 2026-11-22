@@ -69,10 +69,22 @@ cat <<EOF
 #     writable as before.
 # 18. These GNOME fixes are re-applied after package and release upgrades (sb4edge-gnome-persist), which also gives
 #     the login screen your display setup: with two monitors the desktop no longer stutters for minutes after login.
+# 2026-11-22:
+# 19. Right-click menus: smoother edges in all apps (no dark outline line); desktop icon menus no longer cut off.
+#     Boot: no more "Error running install command ... snd-pcm-oss" (sound OSS-emulation preload lines that fail in
+#     the initramfs are removed; next boot).
 # 20. Battery: the percentage no longer drops to 4 %/7 % or jumps to 100 % for a moment; Resources shows the design
 #     capacity (next boot).
-# 19. Right-click menus: smoother edges in all apps (no dark outline line); desktop icon menus no longer cut off. Boot: no more "Error running install command
-#     ... snd-pcm-oss" (sound OSS-emulation preload lines that fail in the initramfs are removed; next boot).
+# 21. The project's own GNOME extensions (screenshot, OCR, overview, RustDesk window helper) are now one extension,
+#     Book 4 Edge Tweaks XR, with a switch per feature in its preferences; the four old ones are removed. It also cleans
+#     up after the extra top bars of the auto-hiding top bar ("already disposed" errors and leaked work after every
+#     monitor change or unlock), and shows the accessibility menu only when "Always Show Accessibility Menu" is on,
+#     on every top bar (GNOME showed it whenever Large Text was on). From the next login.
+# 22. Battery life: the auto-hiding top bar and the Ubuntu Dock no longer poll the pointer (about 20 wakeups a second
+#     less while idle); the fan control and the backlight memory no longer start processes every 2-3 s; the USB-C
+#     helper reads fewer registers per check (from the next boot).
+# 23. Wi-Fi driver: after the access point switched channels (DFS), every Wi-Fi status check blocked 3 s (ath12k
+#     counted the restarted connection twice). Fixed module, used from the next boot.
 set -eu
 KREL=$KREL
 KVER=$KVER
@@ -85,6 +97,7 @@ emb EDID display/g9/make-g9-edid.py
 emb FAN overlay/sb4edge-fan
 emb USBC out/sb4edge-usbc
 emb KBD overlay/sensors/sb4edge-kbd-ambient
+emb BKL overlay/backlight/sb4edge-backlight
 emb LFP "$LFP"
 emb GIR "$GIR"
 emb RES "$RES"
@@ -145,7 +158,7 @@ put() { # put VAR target mode
 	return 0
 }
 
-restart_iio=0 restart_fan=0 reload=0
+restart_iio=0 restart_fan=0 restart_bkl=0 reload=0
 put IIO /usr/lib/sb4edge/ssc/iio-sensor-proxy 755 && restart_iio=1
 put FPI /usr/sbin/sb4edge-fingerprint-import 755 || true
 put FPSVC /usr/lib/systemd/system/sb4edge-fingerprint-import.service 644 && reload=1
@@ -153,6 +166,7 @@ put EDID /usr/lib/sb4edge/make-g9-edid.py 644 || true
 put FAN /usr/libexec/sb4edge-fan 755 && restart_fan=1
 put USBC /usr/libexec/sb4edge-usbc 755 || true
 put KBD /usr/libexec/sb4edge-kbd-ambient 755 || true
+put BKL /usr/libexec/sb4edge-backlight 755 && restart_bkl=1
 
 # The setting for the fingerprint import: added with the default (touch to import), never overwritten.
 if [ ! -e /etc/default/sb4edge-fingerprint ]; then
@@ -310,6 +324,16 @@ fi
 
 # GNOME extensions, system-wide (a copy in ~/.local/share/gnome-shell/extensions still takes precedence).
 schemas=0
+# Replaced by sb4edge-tweaks-xr@sb4edge (2026-11-22): removed where this script installed them.
+for uuid in no-screenshot-box-xr@sb4edge tesseract-ocr-xr@sb4edge sb4edge-overview-close@sb4edge rustdesk-window@sb4edge; do
+	X=/usr/share/gnome-shell/extensions/$uuid M=/var/lib/sb4edge/extensions/$uuid.sha256
+	[ -f "$M" ] || continue
+	if [ -d "$X" ]; then
+		backup "$X"; rm -rf "$X"
+		echo "removed: extension $uuid (now part of sb4edge-tweaks-xr@sb4edge)"; changed=1
+	fi
+	rm -f "$M"
+done
 for e in $EXTS; do
 	var=${e%%:*} uuid=${e#*:}
 	eval "sha=\$${var}_SHA"
@@ -324,7 +348,11 @@ for e in $EXTS; do
 	echo "updated: extension $uuid"; changed=1
 done
 put EXTO /usr/share/glib-2.0/schemas/90-sb4edge-extensions.gschema.override 644 && schemas=1
-[ $schemas = 0 ] || { glib-compile-schemas /usr/share/glib-2.0/schemas && echo "  extensions are on by default from the next login (unless you set your own list)"; }
+if [ $schemas = 1 ]; then
+	glib-compile-schemas /usr/share/glib-2.0/schemas && echo "  extensions are on by default from the next login (unless you set your own list)"
+	echo "  own list of extensions? Turn on \"Book 4 Edge Tweaks XR\" in Extensions: it replaces the four sb4edge screenshot,"
+	echo "  OCR, overview and RustDesk extensions (their earlier settings are not carried over)"
+fi
 
 # Ubuntu Dock and AppIndicators patches (re-applied after their package updates by the apt hook).
 put DOCK /usr/lib/sb4edge/sb4edge-dock-fix 755 || true
@@ -393,6 +421,9 @@ if command -v systemctl >/dev/null; then
 	fi
 	if [ $restart_fan = 1 ] && systemctl is-active --quiet sb4edge-fan; then
 		systemctl restart sb4edge-fan && echo "fan control restarted: $(systemctl is-active sb4edge-fan)"
+	fi
+	if [ $restart_bkl = 1 ] && systemctl is-active --quiet sb4edge-backlight; then
+		systemctl restart sb4edge-backlight && echo "backlight memory restarted: $(systemctl is-active sb4edge-backlight)"
 	fi
 fi
 

@@ -156,6 +156,115 @@ EDGE_DESTROY_NEW = EDGE_DESTROY_OLD + """        if (this._cursorMovedId)
         this._cursorMovedId = 0;
 """
 
+# Patch 3b: texts as patch 3 leaves them (old) and their event-driven replacements (new).
+EDGE_CTOR_OLD = """        this._edgeDwell = 0;
+        this._edgeWatchId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 150, () => {
+            this._edgeWatchTick();
+            return GLib.SOURCE_CONTINUE;
+        });
+"""
+EDGE_CTOR_NEW = """        this._edgeDwell = 0;
+        // """ + EDGE_EVENT_MARK + """: no fixed polling; pointer motion, a hide or a hover change wakes the watch
+        this._edgeWatchId = 0;
+        this._cursorTracker = global.backend.get_cursor_tracker();
+        this._cursorMovedId = this._cursorTracker.connect('position-invalidated', () => this._edgeWatchWake());
+        this.connect('hiding', () => this._edgeWatchWake());
+        this._box.connect('notify::hover', () => this._edgeWatchWake());
+"""
+EDGE_TICK_OLD = """    _edgeWatchTick() {
+        const [, , mods] = global.get_pointer();
+        const buttons = Clutter.ModifierType.BUTTON1_MASK | Clutter.ModifierType.BUTTON2_MASK |
+            Clutter.ModifierType.BUTTON3_MASK;
+        if (!this.autohideEnabled || this._ignoreHover || Main.overview.visibleTarget ||
+            Main.modalCount > 0 || (mods & buttons) ||
+            (!DockManager.settings.autohideInFullscreen && this._monitor?.inFullscreen)) {
+            this._edgeDwell = 0;
+            return;
+        }
+        // back on the icons during the hide delay: the dock is still drawn there but may not get hover
+        // (the window below gets the pointer), so cancel the hide
+        if (this.dockState === State.HIDING && this._pointerOnDock()) {
+            this._show();
+            this._pointerAtDockEdge();
+            return;
+        }
+        if (this.dockState !== State.HIDDEN || !this._pointerAtDockEdgeNow()) {
+            this._edgeDwell = 0;
+            return;
+        }
+        this._edgeDwell += 150;
+        if (this._edgeDwell < DockManager.settings.showDelay * 1000)
+            return;
+        this._edgeDwell = 0;
+        this._show();
+        this._pointerAtDockEdge();   // arms the check that hides it again once the pointer leaves
+    }
+
+"""
+EDGE_TICK_NEW = """    // """ + EDGE_EVENT_MARK + """: true while the watch has something to do: the pointer on the hidden dock's
+    // edge (show after show-delay), on the icons while the dock hides (cancel the hide), or on the shown dock
+    // without hover (a hide is about to start)
+    _edgeWatchNeeded() {
+        const [, , mods] = global.get_pointer();
+        const buttons = Clutter.ModifierType.BUTTON1_MASK | Clutter.ModifierType.BUTTON2_MASK |
+            Clutter.ModifierType.BUTTON3_MASK;
+        if (!this.autohideEnabled || this._ignoreHover || Main.overview.visibleTarget ||
+            Main.modalCount > 0 || (mods & buttons) ||
+            (!DockManager.settings.autohideInFullscreen && this._monitor?.inFullscreen))
+            return false;
+        if (this.dockState === State.HIDDEN)
+            return this._pointerAtDockEdgeNow();
+        if (this.dockState === State.HIDING)
+            return this._pointerOnDock();
+        if (this.dockState === State.SHOWN)
+            return !this._box?.hover && this._pointerOnDock();
+        return false;
+    }
+
+    _edgeWatchWake() {
+        if (this._edgeWatchId || !this._box || !this._edgeWatchNeeded())
+            return;
+        this._edgeWatchId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 150, () => {
+            if (this._edgeWatchTick())
+                return GLib.SOURCE_CONTINUE;
+            this._edgeWatchId = 0;
+            this._edgeDwell = 0;
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    // returns whether to keep ticking
+    _edgeWatchTick() {
+        if (!this._edgeWatchNeeded())
+            return false;
+        // back on the icons during the hide delay: the dock is still drawn there but may not get hover
+        // (the window below gets the pointer), so cancel the hide
+        if (this.dockState === State.HIDING) {
+            this._show();
+            this._pointerAtDockEdge();
+            return false;
+        }
+        if (this.dockState !== State.HIDDEN)
+            return true;   // shown without hover: wait for the hide to start
+        this._edgeDwell += 150;
+        if (this._edgeDwell < DockManager.settings.showDelay * 1000)
+            return true;
+        this._edgeDwell = 0;
+        this._show();
+        this._pointerAtDockEdge();   // arms the check that hides it again once the pointer leaves
+        return false;
+    }
+
+"""
+EDGE_DESTROY_OLD = """        if (this._edgeWatchId)
+            GLib.source_remove(this._edgeWatchId);
+        this._edgeWatchId = 0;
+"""
+EDGE_DESTROY_NEW = EDGE_DESTROY_OLD + """        if (this._cursorMovedId)
+            this._cursorTracker.disconnect(this._cursorMovedId);
+        this._cursorMovedId = 0;
+"""
+
 PATCHES = [
     (f"{EXT}/ubuntu-dock@ubuntu.com/theming.js", DOCK_MARK, [
         # Transparency constructor: watch our own dock's destruction

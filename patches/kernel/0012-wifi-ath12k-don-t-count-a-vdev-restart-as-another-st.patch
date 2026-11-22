@@ -1,0 +1,40 @@
+From 0e2d2a3d48ef0bc7b8acf72b66fbe94483ad17e9 Mon Sep 17 00:00:00 2001
+From: rafaelmnz <69637001+rafaelmnz@users.noreply.github.com>
+Date: Sun, 22 Nov 2026 00:58:37 -0500
+Subject: [PATCH] wifi: ath12k: don't count a vdev restart as another started
+ vdev
+
+ath12k_mac_vdev_start_restart() increments num_started_vdevs for restarts too. A restart is only used
+for a vdev that is up (channel switch, e.g. a DFS AP moving channel) and is not preceded by a stop, so
+after one channel switch the counter stayed one above the started vdevs. ath12k_wmi_fw_stats_process()
+completes a WMI_REQUEST_VDEV_STAT request only after that many vdev replies, and the firmware reports
+the one vdev it has, so from then on every station dump (NetworkManager polls every 3-6 s) blocked
+3 s on "time out while waiting for fw stats done".
+
+Count only real starts.
+---
+ drivers/net/wireless/ath/ath12k/mac.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/wireless/ath/ath12k/mac.c b/drivers/net/wireless/ath/ath12k/mac.c
+index adfde61..ea55197 100644
+--- a/drivers/net/wireless/ath/ath12k/mac.c
++++ b/drivers/net/wireless/ath/ath12k/mac.c
+@@ -11490,7 +11490,13 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
+ 						   &arvif->reg_tpc_info);
+ 	}
+ 
+-	ar->num_started_vdevs++;
++	/* A restart (channel switch of a vdev that is up) re-starts a vdev that is already counted and is not
++	 * stopped first; counting it again left num_started_vdevs one too high after every channel switch, so
++	 * ath12k_wmi_fw_stats_process() waited for vdev stats the firmware never sends and every station dump
++	 * blocked 3 s ("time out while waiting for fw stats done").
++	 */
++	if (!restart)
++		ar->num_started_vdevs++;
+ 	ath12k_dbg(ab, ATH12K_DBG_MAC,  "vdev %pM started, vdev_id %d\n",
+ 		   ahvif->vif->addr, arvif->vdev_id);
+ 
+-- 
+2.54.0 (Apple Git-157)
+

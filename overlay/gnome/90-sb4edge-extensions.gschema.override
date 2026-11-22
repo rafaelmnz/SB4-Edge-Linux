@@ -5,12 +5,14 @@
 #                               secondary panels; overview search spacing at fractional scaling)
 #   top-bar-organizer-plus      reorder top bar items
 #   simple-weather              weather in the top bar
-#   no-screenshot-box-xr        screenshot UI without the selection box
-#   tesseract-ocr-xr            OCR (text) from a screen area, needs tesseract-ocr
-#   rustdesk-window             keeps RustDesk's session window usable on Wayland
-#   sb4edge-overview-close      Esc / a click on empty space closes the overview and app grid; a click on a
-#                               neighbouring workspace switches to it
+#   sb4edge-tweaks-xr           sb4edge's own tweaks in one extension, each switchable in its preferences:
+#                               screenshot UI without the selection box, OCR (text) from a screen area (needs
+#                               tesseract-ocr), Esc / empty-space click closes the overview and a click on a
+#                               neighbouring workspace switches to it, RustDesk window locator, cleanup after
+#                               hidetopbar's extra top bars, accessibility icon only with "Always Show" (also while
+#                               Large Text is on, on every top bar). Listed before hidetopbar: GNOME enables in this
+#                               order and disables in reverse at lock, so the cleanup sees every extra top bar.
 # snapd-search-provider (Ubuntu, declares GNOME 48-49) is disabled: on GNOME 51 it broke Esc in the overview search.
 [org.gnome.shell]
-enabled-extensions=['display-brightness-ddcutil@themightydeity.github.com', 'hidetopbar-multimonitor@linuxitos.local', 'top-bar-organizer-plus@shibasishpaul.github.com', 'simple-weather@romanlefler.com', 'no-screenshot-box-xr@sb4edge', 'tesseract-ocr-xr@sb4edge', 'rustdesk-window@sb4edge', 'sb4edge-overview-close@sb4edge']
+enabled-extensions=['display-brightness-ddcutil@themightydeity.github.com', 'sb4edge-tweaks-xr@sb4edge', 'hidetopbar-multimonitor@linuxitos.local', 'top-bar-organizer-plus@shibasishpaul.github.com', 'simple-weather@romanlefler.com']
 disabled-extensions=['snapd-search-provider@canonical.com']

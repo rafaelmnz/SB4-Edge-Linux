@@ -30,24 +30,40 @@ for i in {1..30}; do
 done
 [ -n "$target" ] || { echo "samsung_galaxybook_ec hwmon not found (samsung_galaxybook_kbd not loaded?)" >&2; exit 1; }
 
-# Hottest CPU zone in °C, or nothing when no CPU zone gave a valid reading (the caller then runs the fan at the
+# The loop starts no processes (it runs every 2 s for as long as the laptop is on): sysfs files are read with
+# bash's read, results are returned in variables, and the pause is a timed read on a pipe nobody writes to.
+exec {PAUSE_FD}<> <(:)
+pause() { read -r -t "$1" -u "$PAUSE_FD" _ || :; }
+
+# CPU thermal zones, found once (again whenever none gives a reading).
+ZONES=()
+find_zones() {
+  local z ty
+  ZONES=()
+  for z in /sys/class/thermal/thermal_zone*; do
+    read -r ty < "$z/type" 2>/dev/null || continue
+    [[ $ty == cpu* ]] && ZONES+=("$z/temp")
+  done
+}
+
+# TEMP: hottest CPU zone in °C, or empty when no CPU zone gave a valid reading (the caller then runs the fan at the
 # profile's top step instead of reading that as 0 °C, which would switch the fan off).
 cpu_temp() {
-  local z t max= ty
-  for z in /sys/class/thermal/thermal_zone*; do
-    ty=$(<"$z/type") 2>/dev/null || continue
-    [[ $ty == cpu* ]] || continue
-    t=$(<"$z/temp") 2>/dev/null || continue
+  local f t max=
+  for f in "${ZONES[@]}"; do
+    read -r t < "$f" 2>/dev/null || continue
     [[ $t =~ ^-?[0-9]+$ ]] || continue
     [ -z "$max" ] || ((t > max)) && max=$t
   done
-  [ -n "$max" ] && echo $((max / 1000))
+  TEMP=
+  [ -n "$max" ] && TEMP=$((max / 1000))
 }
 
+# PROFILE: quiet, performance or balanced.
 profile() {
-  local p
-  p=$(cat /sys/firmware/acpi/platform_profile 2>/dev/null)
-  case $p in quiet|performance) echo "$p" ;; *) echo balanced ;; esac
+  local p=
+  read -r p < /sys/firmware/acpi/platform_profile 2>/dev/null
+  case $p in quiet|performance) PROFILE=$p ;; *) PROFILE=balanced ;; esac
 }
 
 # CPU frequency cap: QUIET_MAX_KHZ in quiet, none otherwise (the kernel clamps the large value to the
@@ -72,17 +88,20 @@ set_cpu_cap() {
 restore() { echo 0 > "$target"; set_cpu_cap balanced; exit 0; }
 trap restore TERM INT
 
+find_zones
 mode= step=0 last=-1 since=0 nodata=0
 while :; do
-  p=$(profile)
-  if [ "$p" != "$mode" ]; then
-    mode=$p
+  profile
+  if [ "$PROFILE" != "$mode" ]; then
+    mode=$PROFILE
     declare -n TRIPS=${mode^^}_TRIPS RPMS=${mode^^}_RPMS
     set_cpu_cap "$mode"
     echo "mode $mode"
     last=-1
   fi
-  t=$(cpu_temp)
+  cpu_temp
+  [ -n "$TEMP" ] || { find_zones; cpu_temp; }
+  t=$TEMP
   ((step > ${#TRIPS[@]})) && step=${#TRIPS[@]}
   if [ -z "$t" ]; then
     # No CPU temperature: keep cooling (top step) until readings come back.
@@ -99,5 +118,5 @@ while :; do
     ((step != last)) && echo "$t °C: ${RPMS[step]} rpm"
     echo "${RPMS[step]}" > "$target" && last=$step since=$SECONDS
   fi
-  sleep 2
+  pause 2
 done

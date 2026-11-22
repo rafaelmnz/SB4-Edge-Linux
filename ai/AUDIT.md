@@ -21,9 +21,15 @@ repository at the commit named in its header.
    ADSP. Look for writes outside the documented commands, missing bounds checks, and races.
 4. **Kernel patches.** `patches/kernel/0004-sb4edge-local-changes.patch` (devicetree and driver changes) and
    `patches/sb4edge-local/*`. Check devicetree bindings, register values, and whether anything is upstreamable.
+   `0011` and `0012` are ath12k fixes meant for upstream (fw stats state per request; a vdev restart counted as a
+   new start); check them against the current ath12k tree.
 5. **Build reproducibility.** `build.sh` and the steps it runs. Inputs are pinned (kernel commit, libfprint MR
    commit, Ubuntu packages by version); report anything fetched unpinned.
-6. **Alternative designs.** Where would you solve a problem differently (upstream driver instead of userspace
+6. **GNOME Shell patching.** `sb4edge-tweaks-xr` (`overlay/gnome/extensions/`) wraps `GObject.Object.prototype
+   .connect`/`connectObject` while an extra top bar is built, and the patches applied to Ubuntu Dock and Hide Top Bar
+   change their pointer handling. Look for handlers that could be removed from the wrong object, wrappers not
+   restored on disable, and states where the dock or top bar could stay hidden.
+7. **Alternative designs.** Where would you solve a problem differently (upstream driver instead of userspace
    helper, another distribution's packaging)? `ai/KNOWLEDGE.md` lists open problems.
 
 ## Security-sensitive parts
@@ -51,6 +57,12 @@ repository at the commit named in its header.
   with the observations (logs, measured values). There is no automated hardware test suite. `hw-check.sh` gathers
   a status report on a running system.
 - QEMU (`test/`) covers booting the ISO and installing next to a Windows-like partition layout only.
+- GNOME extensions and the dock patch are also tested in a nested headless GNOME Shell (`gnome-shell --headless
+  --wayland --no-x11 --virtual-monitor ...` in a private D-Bus session) with two virtual monitors, a virtual
+  pointer, and a probe extension that counts timer wakeups and "already disposed" errors; the steps and results are
+  in `docs/DEVELOPMENT-NOTES.md`.
+- Wakeups and battery use are measured per process (context switches, CPU time, forks via perf, D-Bus traffic,
+  disk writes) on the running laptop; kernel-side questions with ftrace/kprobes.
 
 ## Known gaps and honest caveats
 
