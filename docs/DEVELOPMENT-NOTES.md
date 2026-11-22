@@ -680,7 +680,9 @@ Windows qcdxkm8380.sys: logging stripped; AUX diag escape at sub_140115C40 calls
   Before: 90/90 frames failed. After: 4K H.264/HEVC test clips 90/90 frames, no errors, framemd5 identical to
   libavcodec; 4K 40 Mbit/s H.264 73 fps, 1.2 CPU-s per 10 s (software 9.2). qcom-va-driver-tests: all pass except
   vpp-overlay (CDSP VPP disabled at build time); vpp-scaling/tonemap and prime-import need /dev/dma_heap/system
-  (root-only). Citrix: HWAccelerationEnabled=True in ~/.ICAClient/wfclient.ini [Thinwire3.0].
+  (root-only). Citrix Workspace 26.08 arm64 cannot use it: its bundled libavcodec.so.62/libavutil.so.60 were
+  configured with the *_vaapi hwaccels but contain no libva code (no vaInitialize), so HWAccelerationEnabled does
+  nothing and HDX H.264 stays in software.
 - Wi-Fi stats freezes (2026-11-20): Resources froze (its UI thread blocked in ath12k_mac_get_fw_stats /
   nl80211_dump_interface), and every `iw station dump` took 6-11 s: "time out while waiting for fw stats done" 2500x
   in a day. fw_stats.num_vdev_recvd was only reset after a successful request, so after one miss every VDEV_STAT

@@ -137,7 +137,8 @@ implemented but not tested on hardware; **[open]** not solved.
   "S_CTRL DISPLAY_DELAY ... Invalid argument"). With them [verified 2026-11-19]: ffmpeg -hwaccel vaapi 4K H.264
   40 Mbit/s 73 fps at 27 % of one core (software 380 %), output bit-identical to software for H.264 and HEVC; the
   qcom-va-driver-tests suite passes (AV1 7 cases, error recovery, encoder, VPP scaling/tone mapping as root;
-  /dev/dma_heap/system is root-only). VPP overlay needs CDSP VPP, disabled in Ubuntu's build. GStreamer `v4l2h264dec`/`v4l2h265dec`/`v4l2vp9dec`/`v4l2av1dec` (rank
+  /dev/dma_heap/system is root-only). VPP overlay needs CDSP VPP, disabled in Ubuntu's build. Citrix Workspace
+  (26.08 arm64) cannot use VA-API: its bundled FFmpeg libraries have the vaapi hwaccels configured but no libva code. GStreamer `v4l2h264dec`/`v4l2h265dec`/`v4l2vp9dec`/`v4l2av1dec` (rank
   primary+1, so GNOME players use them by default) and `v4l2h264enc`/`v4l2h265enc`; ffmpeg/mpv `*_v4l2m2m`
   (h264, hevc, vp9). Measured: 1080p H.264 650 fps at 32 % of one core (software: 398 %), 4K HEVC 240 fps at 43 %.
   VP9 1080p and AV1 720p decode verified (~500 fps, ~40 %). Only 4:2:0 8-bit main profiles: a VP9 profile 1 / AV1

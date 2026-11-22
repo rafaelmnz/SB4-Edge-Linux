@@ -50,7 +50,7 @@ cat <<EOF
 # 10. NPU in Resources: a read-only module reads the Hexagon NPU's load (it never wakes the NPU), and Resources gets
 #     an NPU page (load, temperature, firmware state) plus Oryon CPU temperature and core count.
 # 11. Video decoder (Iris): fixes a crash report while seeking in videos, and adds what VA-API needs, so apps using
-#     Ubuntu's qcom-va-driver (ffmpeg, Citrix, ...) decode H.264/HEVC/AV1 in hardware (from the next boot).
+#     Ubuntu's qcom-va-driver (ffmpeg and other VA-API apps) decode H.264/HEVC/AV1 in hardware (from the next boot).
 # 2026-11-20/21:
 # 12. Wi-Fi driver: Resources and "iw" froze for seconds at a time once one firmware statistics request had timed out
 #     (ath12k waited 3 s on every later one). Fixed module, used from the next boot.

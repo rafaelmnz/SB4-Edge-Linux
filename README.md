@@ -88,7 +88,9 @@ Known issues: switching a USB-C port from DisplayPort back to USB 3 can fail unt
 and games render on the GPU.
 
 **Video (Iris video engine, kernel `iris` driver):** decoding and encoding are done by a dedicated block, not the GPU,
-and are exposed as V4L2 devices (`qcom-iris-decoder`, `qcom-iris-encoder`), not VAAPI.
+and are exposed as V4L2 devices (`qcom-iris-decoder`, `qcom-iris-encoder`). VA-API works on top of them through
+Ubuntu's `qcom-va-driver` (`sudo apt install qcom-va-driver`), which needs the Iris patches in `patches/kernel/0006-0010`
+(in kernels built from this repository; installed systems get them from the update script).
 
 | Codec | Decode | Encode | Profiles |
 |---|---|---|---|
@@ -99,9 +101,12 @@ and are exposed as V4L2 devices (`qcom-iris-decoder`, `qcom-iris-encoder`), not 
 
 - **GNOME video players and anything GStreamer-based** use it automatically (`v4l2h264dec`, `v4l2h265dec`,
   `v4l2vp9dec`, `v4l2av1dec` outrank the software decoders; encoders `v4l2h264enc`, `v4l2h265enc`).
-- **mpv / ffmpeg:** `mpv --hwdec=v4l2m2m-copy`, `ffmpeg -c:v h264_v4l2m2m` (also `hevc_`, `vp9_`).
-- **Browsers:** Firefox and Chromium still decode video in software here (their Linux builds expect VAAPI; Firefox's
-  V4L2 path is untested).
+- **mpv / ffmpeg:** `mpv --hwdec=v4l2m2m-copy`, `ffmpeg -c:v h264_v4l2m2m` (also `hevc_`, `vp9_`), or VA-API:
+  `ffmpeg -hwaccel vaapi -hwaccel_device /dev/dri/renderD128 -hwaccel_output_format vaapi` (4K H.264 at 40 Mbit/s:
+  73 fps at 27 % of one core, output identical to software decoding).
+- **Citrix Workspace** decodes in software: its bundled FFmpeg has no VA-API code.
+- **Browsers:** Firefox and Chromium still decode video in software here (not yet tested with `qcom-va-driver`;
+  Firefox's V4L2 path is untested).
 
 **Speed** (`tools/video-bench.sh`, on AC power, synthetic moving test pattern; CPU = % of one core, 12 cores = 1200 %):
 
