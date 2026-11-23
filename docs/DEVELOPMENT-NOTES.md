@@ -967,3 +967,6 @@ in each user's gtk.css and /etc/skel,
   - Boot 22:41 without the qrtr force-load: the CDSP qrtr race came back (5.16 s, msm at 7.92 s, initrd 9.8 s) and the
     splash still did not draw (hook timeout). qrtr force-load restored; it is not what blocks the splash. TEMP
     plymouth.debug=file:/run/plymouth-debug.log for one boot.
+  - Logoff 22:41:17: shell gone in 0.47 s, greeter session 18.07 s, greeter shell up 20.45 s (~2.6 s of last frame).
+    Restart 22:41:26 from the greeter: user@1000 hit its 5 s stop timeout because claude-remote-control (laptop-only
+    user service) ignored SIGTERM; laptop drop-in TimeoutStopSec=2s.
