@@ -1,0 +1,4 @@
+# sb4edge: Wi-Fi country (ISO 3166 code, e.g. US, DE, BR). Sent to the Wi-Fi chip as soon as it appears, so it
+# skips its "which country am I in" scan, which blocked all other scans for ~7 s and delayed the first connection.
+# Empty: the chip finds out by itself (slower).
+COUNTRY=

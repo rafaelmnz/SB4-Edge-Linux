@@ -1,0 +1,7 @@
+#!/bin/sh
+# sb4edge: tell a newly added Wi-Fi radio which country it is in (COUNTRY in /etc/default/sb4edge-wifi).
+# ath12k (WCN7850) otherwise runs a firmware 11d scan at start that makes every other scan fail as busy.
+COUNTRY=
+[ -r /etc/default/sb4edge-wifi ] && . /etc/default/sb4edge-wifi
+case $COUNTRY in [A-Z][A-Z]) ;; *) exit 0;; esac
+exec /usr/sbin/iw reg set "$COUNTRY"

@@ -194,6 +194,10 @@ install -Dm644 /work/overlay/sb4edge-battery-dracut.conf "$B/etc/dracut.conf.d/s
 install -Dm644 /work/overlay/sb4edge-plymouthd.conf "$B/etc/plymouth/plymouthd.conf"
 install -Dm644 /work/overlay/sb4edge-slim-dracut.conf "$B/etc/dracut.conf.d/sb4edge-slim.conf"
 install -Dm644 /work/overlay/sb4edge-qrtr-dracut.conf "$B/etc/dracut.conf.d/sb4edge-qrtr.conf"
+install -Dm755 /work/overlay/wifi/sb4edge-wifi-country "$B/usr/lib/sb4edge/sb4edge-wifi-country"
+install -Dm644 /work/overlay/wifi/80-sb4edge-wifi-country.rules "$B/usr/lib/udev/rules.d/80-sb4edge-wifi-country.rules"
+install -Dm644 /work/overlay/wifi/sb4edge-wifi.default "$B/etc/default/sb4edge-wifi"
+install -Dm644 /work/overlay/wifi/sb4edge-wifi-country-dracut.conf "$B/etc/dracut.conf.d/sb4edge-wifi-country.conf"
 install -Dm644 /work/display/sb4edge-edid.bin "$B/usr/lib/firmware/edid/sb4edge-edid.bin"
 install -Dm644 /work/overlay/sb4edge-edid-dracut.conf "$B/etc/dracut.conf.d/sb4edge-edid.conf"
 # Adreno X1-85 microcode in the initramfs: msm probes there, and without it "failed to load gen70500_sqe.fw" was

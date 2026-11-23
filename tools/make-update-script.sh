@@ -91,6 +91,9 @@ cat <<EOF
 #     (113 -> 76 MB for the boot loader to read), and is built for this laptop's hardware only (184 instead of ~2570
 #     drivers, 52 MB). The full one stays as a rescue entry: hold Esc after choosing Ubuntu in rEFInd. The NPU's
 #     message driver loads before the DSPs start (a race once stalled the boot, display included, for 5 s).
+# 26. Wi-Fi connects sooner after boot: set COUNTRY in /etc/default/sb4edge-wifi (e.g. COUNTRY=US). The Wi-Fi chip
+#     then skips its own country scan, which blocked every other scan for several seconds (driver rebuilt to accept
+#     the setting).
 set -eu
 KREL=$KREL
 KVER=$KVER
@@ -115,6 +118,10 @@ emb RES "$RES"
 emb NPU out/sb4_cdsp_stats.ko
 emb IRIS out/qcom-iris.ko
 emb ATH out/ath12k.ko
+emb WCC overlay/wifi/sb4edge-wifi-country
+emb WCR overlay/wifi/80-sb4edge-wifi-country.rules
+emb WCD overlay/wifi/sb4edge-wifi-country-dracut.conf
+emb WCF overlay/wifi/sb4edge-wifi.default
 emb SGBAT out/samsung_galaxybook_battery.ko
 emb GKERN overlay/sleep/zz-sb4edge-kernel.cfg
 emb GREFI refind/zz-sb4edge-refind.cfg
@@ -312,9 +319,16 @@ fi
 if [ "$kv" != "$KVER" ]; then
 	echo "skipped: Wi-Fi driver fix (built for linux-image-$KREL $KVER; installed: ${kv:-none})"
 elif put ATH "/usr/lib/modules/$KREL/updates/ath12k.ko" 644; then
-	depmod -a "$KREL"
+	depmod -a "$KREL"; plyc=1
 	echo "  the Wi-Fi fix takes effect at the next boot"
 fi
+
+# Wi-Fi country at start (the chip skips its 11d scan); COUNTRY is the user's choice, kept if already set.
+put WCC /usr/lib/sb4edge/sb4edge-wifi-country 755 || true
+put WCR /usr/lib/udev/rules.d/80-sb4edge-wifi-country.rules 644 && { udevadm control --reload 2>/dev/null || true; } || true
+[ -f /etc/default/sb4edge-wifi ] || { extract WCF /etc/default/sb4edge-wifi; chmod 644 /etc/default/sb4edge-wifi
+	echo "added: /etc/default/sb4edge-wifi (set COUNTRY=<your country code> for a faster first Wi-Fi connection)"; }
+put WCD /etc/dracut.conf.d/sb4edge-wifi-country.conf 644 && plyc=1 || true
 
 # Battery driver with consistent EC reads (same kernel check; reloading it would drop the keyboard backlight driver
 # too, so it takes effect at the next boot).

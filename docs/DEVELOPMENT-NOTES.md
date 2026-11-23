@@ -922,3 +922,11 @@ in each user's gtk.css and /etc/skel,
     probed only at 2.76 s (edp phy/aux bridges waiting for the retimers and gb4e-typec), msm initialized 3.21 s (no
     gain), and plymouth never drew: the first modeset was GDM's at 16.6 s. Reverted to qrtr/qrtr_smd only. Loaded
     before the CDSP, the IPCRTR probe runs in the glink worker (1.48 s that boot), not inside modprobe.
+  - Wi-Fi slow after login (user): connect attempt only at 28.9 s although the radio was ready at 12.7 s. ath12k's
+    11d scan (country detection) makes scans fail as busy until it finishes (country US at 19.9 s), then NM's
+    retry backoff. ath12k.ko rebuilt from the 0011+0012 tree with -DCONFIG_ATH_REG_DYNAMIC_USER_REG_HINTS=1 (only
+    reg.c changes; one more import, get_wiphy_regdom, CRC matches the kernel's), old module kept as
+    .pre-country. Country via udev + /etc/default/sb4edge-wifi (laptop: US; distro default empty). The profile was
+    also marked hidden (active probing on every scan) although the AP broadcasts its SSID: unhidden (laptop only).
+    Gateway ping showed 45 ms average / 170 ms spikes in one run, 4.7 ms clean in two later runs (no scans then):
+    intermittent, not explained yet. DHCP took 5.3 s (server side).

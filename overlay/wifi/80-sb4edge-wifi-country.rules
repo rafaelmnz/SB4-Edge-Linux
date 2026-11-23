@@ -1,0 +1,1 @@
+ACTION=="add", SUBSYSTEM=="ieee80211", RUN+="/usr/lib/sb4edge/sb4edge-wifi-country"

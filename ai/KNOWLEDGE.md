@@ -187,6 +187,15 @@ implemented but not tested on hardware; **[open]** not solved.
 
 ## Wireless
 
+- Slow first connection after boot: ath12k (WCN7850, self-managed regulatory) starts a firmware 11d scan to learn the
+  country; while it runs every scan request fails as busy, and NetworkManager backs off (boot of 2026-11-22: Wi-Fi
+  ready 12.7 s, country from beacons 19.9 s, first connect attempt 28.9 s). `iw reg set XX` would stop the 11d scan
+  (ath12k_reg_notifier, regdom_set_by_user) but needs CONFIG_ATH_REG_DYNAMIC_USER_REG_HINTS (depends on
+  CFG80211_CERTIFICATION_ONUS), off in Ubuntu's config. Now on in sb4edge.config; out/ath12k.ko built with it. A udev
+  rule (80-sb4edge-wifi-country.rules) runs `iw reg set $COUNTRY` from /etc/default/sb4edge-wifi when the radio
+  appears (also in the initramfs). The cfg80211 ieee80211_regdom option does not reach self-managed radios (they are
+  notified only of user hints made after they register).
+
 - Wi-Fi WCN7850 (17cb:1107, board-id 255): linux-firmware lacks the board entry; reuse the shared board-id 255
   data in a board-2.bin entry (`ath12k-board2-add.py`). Samsung's Windows bdwlan.elf crashes the firmware.
 - Bluetooth: needs a stable public address set at boot (`overlay/sb4edge-bt-addr`, mgmt socket).
