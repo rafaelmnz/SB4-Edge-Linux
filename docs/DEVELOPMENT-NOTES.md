@@ -930,3 +930,9 @@ in each user's gtk.css and /etc/skel,
     also marked hidden (active probing on every scan) although the AP broadcasts its SSID: unhidden (laptop only).
     Gateway ping showed 45 ms average / 170 ms spikes in one run, 4.7 ms clean in two later runs (no scans then):
     intermittent, not explained yet. DHCP took 5.3 s (server side).
+  - Splash missing again (boots 20:22 and 20:47, no display until GDM at 16.6 s) with only qrtr force-loaded: the
+    host-only initramfs switches root ~0.6 s after msm initializes (3.72 vs msm 3.11 s), before plymouth's first
+    modeset; plymouth then never drew. The boot that showed it switched at 4.38 s (AVR 3.74 s). dracut module
+    95sb4edge-splash-wait: pre-pivot hook waits (<= 2.5 s) for card*-eDP-*/enabled while plymouth runs.
+  - systemd-udev-settle cost 5.55 s on the critical chain, pulled in by sb4edge-windows-unlock.service (and a
+    laptop-only sb4edge-fnkeys.service). The internal UFS partitions exist before root is mounted: After=local-fs.

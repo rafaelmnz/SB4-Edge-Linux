@@ -1,7 +1,6 @@
 [Unit]
 Description=sb4edge: open BitLocker (Windows) partitions that have a clear key
-After=systemd-udev-settle.service local-fs.target
-Wants=systemd-udev-settle.service
+After=local-fs.target
 
 [Service]
 Type=oneshot
