@@ -945,3 +945,8 @@ in each user's gtk.css and /etc/skel,
     from the firmware handover. Splash shown when the switch came >= 1.2 s after msm init (plymouth's first enable,
     logged as "sb4edge: intf 5 AVR", ~0.6-0.8 s after msm init); missing at 0.84-0.88 s. Hook now waits for that
     kmsg line (timeout 2.5 s).
+  - Logoff/restart "frozen screen" (user): GNOME Shell normally exits 0.5-1 s after "Shutting down"; once in ~28
+    exits (20:46, Citrix Epic open, last message "Connection to xwayland lost") it hung until systemd's 5 s stop
+    timeout killed it. After the shell, the restart took ~4 s, 3 s of it openlogi-agent (third-party Logitech tool,
+    "watcher teardown exceeded the process-exit deadline timeout=3s"): laptop-only user drop-in TimeoutStopSec=1s.
+    On logoff the screen keeps the last frame until GDM's new greeter shell is up (~2 s), as before.
