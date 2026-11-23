@@ -53,8 +53,8 @@ Known issues: switching a USB-C port from DisplayPort back to USB 3 can fail unt
 
 ## What is in the image
 
-- **Kernel**: mainline Linux v7.4-rc3 with Maxim Storetvedt's Galaxy Book4 Edge devicetree series and this
-  project's changes (`patches/kernel`), packaged as `linux-image-7.4.0-rc3-sb4edge`, wrapped in the stubble EFI
+- **Kernel**: mainline Linux v7.4-rc4 with Maxim Storetvedt's Galaxy Book4 Edge devicetree series and this
+  project's changes (`patches/kernel`), packaged as `linux-image-7.4.0-rc4-sb4edge`, wrapped in the stubble EFI
   stub so the devicetree is chosen from the SMBIOS hardware IDs.
 - **Out-of-tree drivers** (`extra/`): EC battery and keyboard, USB-C (retimers and PD controller helper).
 - **Firmware** from the Windows drivers (`fw/`, `windows-files/`): ADSP/CDSP, GPU, video codec, audio modules, and the Wi-Fi board data (only
@@ -65,8 +65,9 @@ Known issues: switching a USB-C port from DisplayPort back to USB 3 can fail unt
   `sb4edge-kbd-ambient` keeps the keyboard backlight at your level in normal light, one step dimmer below 10 lux, off above 40 lux and while the display is off (`/etc/default/sb4edge-kbd-ambient`).
 - **Boot**: rEFInd on the installed system (Linux and Windows), GRUB on the USB stick.
 - **GNOME** (`patches/gnome-*`): Settings -> Power -> "Brightness Adjustment" chooses how the light sensor sets
-  the brightness (up to 25 % around the slider, or a fixed room-light curve the slider shifts); Settings -> Users ->
-  Fingerprint can relabel which finger a print is. An apt hook rebuilds both packages with the patches when Ubuntu
+  the brightness (up to 25 % around the slider, or a fixed room-light curve the slider shifts); Settings -> Power ->
+  "When the Lid Is Closed" chooses Do Nothing / Sleep / Hibernate / Shut Down, on battery and plugged in; Settings ->
+  Users -> Fingerprint can relabel which finger a print is. An apt hook rebuilds both packages with the patches when Ubuntu
   updates them.
 - Rebuilt Ubuntu packages: cryptsetup (BitLocker volumes from recent Windows 11), libcamera (OV02C10), Resources
   (Oryon CPU temperature and core count, Adreno GPU monitoring, Hexagon NPU page: compute DSP load, firmware state

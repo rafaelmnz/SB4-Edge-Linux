@@ -1,6 +1,6 @@
 # Samsung Galaxy Book4 Edge 16" on Linux: knowledge base
 
-Distilled, distribution-independent facts from building SB4-Edge-Linux (Ubuntu 27.04 (26.04.1 before), kernel 7.4-rc3). Written
+Distilled, distribution-independent facts from building SB4-Edge-Linux (Ubuntu 27.04 (26.04.1 before), kernel 7.4-rc4). Written
 for people and AI agents who want to reproduce, verify or redo this work in another way (another distribution,
 upstream patches, a different userspace). Each section: **hardware**, **what was wrong**, **the fix used here**,
 **how it was verified**, **open points / alternatives**. File paths refer to this repository. The chronological log
@@ -23,7 +23,7 @@ implemented but not tested on hardware; **[open]** not solved.
 
 ## Kernel
 
-- Base: mainline **v7.4-rc3** (aebb72744764) + Maxim Storetvedt's Galaxy Book4 Edge devicetree series (v8,
+- Base: mainline **v7.4-rc4** (b6a9fa34ce41) + Maxim Storetvedt's Galaxy Book4 Edge devicetree series (v8,
   patchwork 1177250; `patches/kernel/0001-0003`) + local changes (`patches/kernel/0004-sb4edge-local-changes.patch`).
   `prepare-kernel.sh` applies them; `build-kernel.sh` builds Debian packages; config = Ubuntu's config ∪ arm64
   defconfig + `sb4edge.config`.
@@ -229,6 +229,11 @@ implemented but not tested on hardware; **[open]** not solved.
   brightness curve 1:8, 5:20, 20:35, 80:50, 300:65, 1000:80, 5000:100 %). Settings -> Power shows "Brightness
   Adjustment" (Around the Slider / Follow Room Light) under Automatic Screen Brightness [verified: slider 47 %,
   25 lux -> 963 vs 705 raw]. Proposed upstream to GNOME.
+- Lid close: stock GNOME Settings has no lid option (GNOME removed it); the gsd keys lid-close-battery-action /
+  lid-close-ac-action still work. `patches/gnome-control-center/sb4edge-lid-close.patch` adds "When the Lid Is
+  Closed" (On Battery Power / When Plugged In: Do Nothing, Sleep, Hibernate, Shut Down; the last two only when
+  possible unattended) to Settings -> Power [verified on the laptop since 2026-11-18; in the ISO since 2026-11-23].
+  With an external monitor connected logind treats the laptop as docked and ignores the lid.
 
 ## Fingerprint reader
 

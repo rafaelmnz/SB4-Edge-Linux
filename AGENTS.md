@@ -18,7 +18,7 @@ A single-file version of all of this plus every text source is attached to each 
 | Path | What |
 |---|---|
 | `build.sh` | Orchestrates every step in Docker (`sb4build` image from `docker/`) |
-| `prepare-kernel.sh`, `build-kernel.sh`, `patches/kernel/` | Kernel v7.4-rc3 + DT series + local patch |
+| `prepare-kernel.sh`, `build-kernel.sh`, `patches/kernel/` | Kernel v7.4-rc4 + DT series + local patch |
 | `scripts-build-dtbo.sh`, `dtbo/` | Out-of-tree modules and test DT overlays |
 | `extra/` | Out-of-tree drivers (EC battery/keyboard, USB-C), rebuilt packages (libcamera, libfprint) |
 | `build-*.sh`, `patches/<pkg>/` | Rebuilt Ubuntu packages (cryptsetup, Resources), libssc, fastrpc |

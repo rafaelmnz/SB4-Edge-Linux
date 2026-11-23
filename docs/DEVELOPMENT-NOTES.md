@@ -983,3 +983,17 @@ in each user's gtk.css and /etc/skel,
     mode, so "no AVR before switch-root" never meant "no splash". The 95sb4edge-splash-wait hook therefore always ran
     to its timeout (2-2.5 s per boot): removed (the update script deletes it). Restart 23:15: shell gone 1.2 s, splash
     1.4 s, sync 4.3 s after the click (claude-remote-control and openlogi now stop within their caps).
+
+## 2026-11-23: kernel 7.4-rc4, Ubuntu packages refreshed, release v2026.11.23-27.04.3
+
+- Kernel v7.4-rc4 (b6a9fa34ce41): all patches 0001-0012 apply unchanged; packaged as 7.4rc4-1
+  (linux-image-7.4.0-rc4-sb4edge). The ath12k fixes (0011, 0012) and CONFIG_ATH_REG_DYNAMIC_USER_REG_HINTS are now
+  in the packaged kernel, so the out-of-tree updates/ath12k.ko (rc3 only) is no longer needed. Out-of-tree modules
+  rebuilt (battery, kbd, gb4e-typec, sb4-cdsp-stats).
+- Build containers recreated (the Docker images and the sb4-src volume had been removed by a storage cleanup).
+- Every rebuilt package from current tenacious sources: cryptsetup 2.8.4 -> 2.8.7-1ubuntu3+sb4edge1 (BITLK patch
+  applies unchanged), libfprint 1.95.2 (gir1.2-fprint-2.0 was still 1.95.1 on the laptop), libcamera 0.7.0, Resources
+  51.0, GNOME Settings/settings daemon 51.0. The remaster dist-upgraded 539 packages.
+- The lid-close setting in GNOME Settings (built on the laptop 2026-11-18 as +sb4edge3) had never reached the
+  repo; its patch is now `patches/gnome-control-center/sb4edge-lid-close.patch`, so the ISO has it too.
+

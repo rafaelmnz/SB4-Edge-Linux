@@ -4,7 +4,7 @@
 # ("tenacious") from ports.ubuntu.com while it is remastered.
 # Runs inside the sb4build container (--privileged), /iso = scratch volume, /work = project dir.
 set -euo pipefail
-KVER=7.4.0-rc3-sb4edge
+KVER=7.4.0-rc4-sb4edge
 ORIG=/work/iso/ubuntu-26.10-desktop-arm64.iso
 OUT=/work/out/ubuntu-27.04-sb4edge-desktop-arm64.iso
 FROM_SUITE=stonking   # the ISO's release (its pool and sources)

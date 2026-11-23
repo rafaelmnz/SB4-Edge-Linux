@@ -1,10 +1,10 @@
 #!/bin/bash
-# Prepares the kernel tree for build-kernel.sh: mainline v7.4-rc3 + patches/kernel (Maxim Storetvedt's Galaxy Book4
+# Prepares the kernel tree for build-kernel.sh: mainline v7.4-rc4 + patches/kernel (Maxim Storetvedt's Galaxy Book4
 # Edge devicetree series, then this project's changes). Run inside sb4build with the source volume on /src:
 #   docker volume create sb4-src
 #   docker run --rm -v sb4-src:/src -v "$PWD":/work sb4build bash /work/prepare-kernel.sh
 set -euo pipefail
-TAG=v7.4-rc3
+TAG=v7.4-rc4
 G="git -c safe.directory=* -c user.name=sb4build -c user.email=build@localhost"
 if [ ! -d /src/linux/.git ]; then
 	git clone --depth 1 -b "$TAG" https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git /src/linux

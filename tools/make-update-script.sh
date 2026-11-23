@@ -10,7 +10,11 @@ REV=$(git describe --always --dirty)
 LFP=$(ls out/libfprint/libfprint-2-2_*_arm64.deb)
 GIR=$(ls out/libfprint/gir1.2-fprint-2.0_*_arm64.deb)
 RES=$(ls out/resources/resources_*_arm64.deb)
-# The NPU module is built against this kernel build: it is installed only next to the same kernel package.
+# Kernel modules are installed only next to the kernel package they were built for: KREL/KVER is the kernel this
+# script can install (from its .debs placed next to it); OKREL/OKVER is the kernel of release v2026.11.16, whose
+# module builds are kept in out/modules-$OKREL/ (from that release's update script).
+OKREL=7.4.0-rc3-sb4edge OKVER=7.4rc3-2
+OMOD=out/modules-$OKREL
 KDEB=$(ls out/linux-image-*-sb4edge_*_arm64.deb)
 KREL=$(basename "$KDEB" | sed 's/^linux-image-\(.*\)_\(.*\)_arm64\.deb$/\1/')
 KVER=$(basename "$KDEB" | sed 's/^linux-image-\(.*\)_\(.*\)_arm64\.deb$/\2/')
@@ -25,7 +29,7 @@ emb() { # emb VAR file
 {
 cat <<EOF
 #!/bin/sh
-# SB4-Edge-Linux update for an installed system (release v2026.11.16-27.04.2), from commit $REV.
+# SB4-Edge-Linux update for an installed system (release v2026.11.16-27.04.2 or later), from commit $REV.
 # Run once:  sudo sh sb4edge-update.sh   (then log out and back in, or restart for the boot/Wi-Fi/Windows items)
 # Originals are kept in /var/lib/sb4edge/update-backup/<date>/. Running it again changes nothing.
 #
@@ -100,9 +104,19 @@ cat <<EOF
 #     Num Lock and "Caps"/"Num" in the top bar (from Keyboard Informer by Tomáš Mark, without its 5-times-a-second
 #     polling). OpenLogi's own lock-key popup took keyboard focus, so typing stopped while it was shown: turn off
 #     "lock key notifications" in OpenLogi. From the next login.
+# 2026-11-23:
+# 30. Kernel 7.4-rc4: put linux-image-${KREL}_${KVER}_arm64.deb and linux-headers-${KREL}_${KVER}_arm64.deb from the
+#     release next to this script and it installs them with the out-of-tree drivers (battery, keyboard, USB-C, NPU
+#     load). Without them, the 7.4-rc3 kernel keeps its fixed modules. The Wi-Fi and video fixes are part of 7.4-rc4.
+#     From the next boot (7.4-rc3 stays in GRUB's "Advanced options").
+# 31. Settings -> Power -> "When the Lid Is Closed" (On Battery Power / When Plugged In: Do Nothing, Sleep, Hibernate,
+#     Shut Down): GNOME Settings is rebuilt with it in the background (a few minutes, see
+#     journalctl -u sb4edge-gnome-rebuild@gnome-control-center).
 set -eu
 KREL=$KREL
 KVER=$KVER
+OKREL=$OKREL
+OKVER=$OKVER
 EOF
 emb IIO out/ssc/root/usr/libexec/iio-sensor-proxy
 emb FPI overlay/fingerprint/sb4edge-fingerprint-import
@@ -125,13 +139,18 @@ emb LFP "$LFP"
 emb GIR "$GIR"
 emb RES "$RES"
 emb NPU out/sb4_cdsp_stats.ko
-emb IRIS out/qcom-iris.ko
-emb ATH out/ath12k.ko
+emb NPU3 "$OMOD/sb4_cdsp_stats.ko"
+emb IRIS3 "$OMOD/qcom-iris.ko"
+emb ATH3 "$OMOD/ath12k.ko"
 emb WCC overlay/wifi/sb4edge-wifi-country
 emb WCR overlay/wifi/80-sb4edge-wifi-country.rules
 emb WCD overlay/wifi/sb4edge-wifi-country-dracut.conf
 emb WCF overlay/wifi/sb4edge-wifi.default
 emb SGBAT out/samsung_galaxybook_battery.ko
+emb SGBAT3 "$OMOD/samsung_galaxybook_battery.ko"
+emb SGKBD out/samsung_galaxybook_kbd.ko
+emb GB4E out/gb4e_typec.ko
+emb LIDP patches/gnome-control-center/sb4edge-lid-close.patch
 emb GKERN overlay/sleep/zz-sb4edge-kernel.cfg
 emb GREFI refind/zz-sb4edge-refind.cfg
 emb DOCK overlay/gnome/sb4edge-dock-fix
@@ -237,30 +256,63 @@ case $cur in
 *) echo "skipped: libfprint-2-2 is not the SB4-Edge build (${cur:-not installed})" ;;
 esac
 
-# NPU load module (only next to the kernel package it was built for).
+# Kernel 7.4-rc4 from the release's .debs next to this script (with its out-of-tree drivers in place first, so the
+# initramfs built by the package has them).
 kv=$(dpkg-query -W -f='${Version}' "linux-image-$KREL" 2>/dev/null || true)
-if dpkg-query -W -f='${Status}' sb4-cdsp-stats 2>/dev/null | grep -q 'ok installed'; then
-	echo "kept: NPU load module (installed by the sb4-cdsp-stats package)"
-elif [ "$kv" != "$KVER" ]; then
-	echo "skipped: NPU load module (built for linux-image-$KREL $KVER; installed: ${kv:-none})"
+okv=$(dpkg-query -W -f='${Version}' "linux-image-$OKREL" 2>/dev/null || true)
+here=$(cd "$(dirname "$0")" && pwd)
+KI="$here/linux-image-${KREL}_${KVER}_arm64.deb" KH="$here/linux-headers-${KREL}_${KVER}_arm64.deb"
+if [ "$kv" = "$KVER" ]; then
+	echo "up to date: kernel $KREL $KVER"
+elif [ -f "$KI" ]; then
+	for m in SGBAT:samsung_galaxybook_battery SGKBD:samsung_galaxybook_kbd GB4E:gb4e_typec NPU:sb4_cdsp_stats; do
+		mkdir -p "/usr/lib/modules/$KREL/updates"; extract "${m%%:*}" "/usr/lib/modules/$KREL/updates/${m#*:}.ko"
+	done
+	h=; [ -f "$KH" ] && h=$KH
+	DEBIAN_FRONTEND=noninteractive dpkg -i "$KI" $h >/dev/null
+	apt-mark hold "linux-image-$KREL" >/dev/null; [ -z "$h" ] || apt-mark hold "linux-headers-$KREL" >/dev/null
+	depmod -a "$KREL"
+	kv=$KVER
+	echo "installed: kernel $KREL $KVER (used from the next boot; $OKREL stays under Advanced options)"; changed=1
 else
-	if put NPU "/usr/lib/modules/$KREL/updates/sb4_cdsp_stats.ko" 644; then depmod -a "$KREL"; fi
+	echo "skipped: kernel $KREL (put linux-image-${KREL}_${KVER}_arm64.deb from the release next to this script)"
+fi
+
+# kmod VAR file krel kver: a module into that kernel's updates/ when that kernel package (exact build) is installed.
+kmod() {
+	v=$(dpkg-query -W -f='${Version}' "linux-image-$3" 2>/dev/null || true)
+	[ "$v" = "$4" ] || return 1
+	put "$1" "/usr/lib/modules/$3/updates/$2" 644 && depmod -a "$3"
+	return 0
+}
+
+# NPU load module (only next to the kernel package it was built for).
+if [ "$kv" != "$KVER" ] && [ "$okv" != "$OKVER" ]; then
+	echo "skipped: NPU load module (no matching SB4-Edge kernel installed)"
+else
+	kmod NPU sb4_cdsp_stats.ko "$KREL" "$KVER" || true
+	# An earlier test package (sb4-cdsp-stats) owns the 7.4-rc3 copy where it is installed.
+	if dpkg-query -W -f='${Status}' sb4-cdsp-stats 2>/dev/null | grep -q 'ok installed'; then
+		echo "kept: NPU load module for $OKREL (installed by the sb4-cdsp-stats package)"
+	else
+		kmod NPU3 sb4_cdsp_stats.ko "$OKREL" "$OKVER" || true
+	fi
 	C=/etc/modules-load.d/sb4edge.conf
 	if ! grep -qx 'sb4_cdsp_stats' "$C" 2>/dev/null; then
 		backup "$C"; mkdir -p "$(dirname "$C")"
 		printf '%s\n' '# Firmware load counter for the Resources NPU graph' 'sb4_cdsp_stats' >> "$C"
 		echo "updated: $C (load the NPU module at boot)"; changed=1
 	fi
-	if [ "$(uname -r)" = "$KREL" ] && [ ! -d /sys/module/sb4_cdsp_stats ]; then
+	if { [ "$(uname -r)" = "$KREL" ] || [ "$(uname -r)" = "$OKREL" ]; } && [ ! -d /sys/module/sb4_cdsp_stats ]; then
 		modprobe sb4_cdsp_stats && echo "NPU load module loaded"
 	fi
 fi
 
-# Video decoder module with the Iris fixes (same kernel check; used from the next boot, as it is in use now).
-if [ "$kv" != "$KVER" ]; then
-	echo "skipped: video decoder module (built for linux-image-$KREL $KVER; installed: ${kv:-none})"
-elif put IRIS "/usr/lib/modules/$KREL/updates/qcom-iris.ko" 644; then
-	depmod -a "$KREL"
+# Video decoder module with the Iris fixes for the 7.4-rc3 kernel (7.4-rc4 has them built in); from the next boot.
+if [ "$okv" != "$OKVER" ]; then
+	echo "skipped: video decoder module (only for linux-image-$OKREL $OKVER; installed: ${okv:-none})"
+elif put IRIS3 "/usr/lib/modules/$OKREL/updates/qcom-iris.ko" 644; then
+	depmod -a "$OKREL"
 	echo "  the video decoder fix takes effect at the next boot"
 fi
 
@@ -324,11 +376,11 @@ PY
 	rm -rf "$T"
 fi
 
-# Wi-Fi driver with the firmware statistics fix (same kernel check; in use now, so from the next boot).
-if [ "$kv" != "$KVER" ]; then
-	echo "skipped: Wi-Fi driver fix (built for linux-image-$KREL $KVER; installed: ${kv:-none})"
-elif put ATH "/usr/lib/modules/$KREL/updates/ath12k.ko" 644; then
-	depmod -a "$KREL"; plyc=1
+# Wi-Fi driver with the firmware statistics fixes for the 7.4-rc3 kernel (7.4-rc4 has them built in).
+if [ "$okv" != "$OKVER" ]; then
+	echo "skipped: Wi-Fi driver fix (only for linux-image-$OKREL $OKVER; installed: ${okv:-none})"
+elif put ATH3 "/usr/lib/modules/$OKREL/updates/ath12k.ko" 644; then
+	depmod -a "$OKREL"; plyc=1
 	echo "  the Wi-Fi fix takes effect at the next boot"
 fi
 
@@ -341,11 +393,21 @@ put WCD /etc/dracut.conf.d/sb4edge-wifi-country.conf 644 && plyc=1 || true
 
 # Battery driver with consistent EC reads (same kernel check; reloading it would drop the keyboard backlight driver
 # too, so it takes effect at the next boot).
-if [ "$kv" != "$KVER" ]; then
-	echo "skipped: battery driver fix (built for linux-image-$KREL $KVER; installed: ${kv:-none})"
-elif put SGBAT "/usr/lib/modules/$KREL/updates/samsung_galaxybook_battery.ko" 644; then
-	depmod -a "$KREL"
-	echo "  the battery fix takes effect at the next boot"
+if [ "$kv" != "$KVER" ] && [ "$okv" != "$OKVER" ]; then
+	echo "skipped: battery driver fix (no matching SB4-Edge kernel installed)"
+else
+	c0=$changed
+	kmod SGBAT samsung_galaxybook_battery.ko "$KREL" "$KVER" || true
+	kmod SGBAT3 samsung_galaxybook_battery.ko "$OKREL" "$OKVER" || true
+	[ "$changed" = "$c0" ] || echo "  the battery fix takes effect at the next boot"
+fi
+
+# Lid-close setting in GNOME Settings: the patch goes with the others; the rebuild helper notices the new patch set.
+if put LIDP /usr/share/sb4edge/patches/gnome-control-center/sb4edge-lid-close.patch 644; then
+	if [ -x /usr/lib/sb4edge/sb4edge-gnome-rebuild ]; then
+		systemctl start --no-block sb4edge-gnome-rebuild@gnome-control-center.service 2>/dev/null &&
+			echo "  GNOME Settings is being rebuilt with the lid setting (a few minutes; reopen Settings afterwards)"
+	fi
 fi
 
 # Silent boot: the sb4edge kernel as GRUB's top-level entry, no console cursor.

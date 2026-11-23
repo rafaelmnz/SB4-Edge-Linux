@@ -31,7 +31,7 @@ for s in $steps; do
 	image)      step "build container images sb4build (27.04) and sb4build:kernel (26.04)"
 	            docker build -t sb4build:latest docker
 	            docker build -t sb4build:kernel docker/kernel ;;
-	kernel)     step "kernel: v7.4-rc3 + patches/kernel -> out/*.deb"
+	kernel)     step "kernel: v7.4-rc4 + patches/kernel -> out/*.deb"
 	            docker volume create sb4-src >/dev/null
 	            krun bash /work/prepare-kernel.sh
 	            krun bash /work/build-kernel.sh ;;

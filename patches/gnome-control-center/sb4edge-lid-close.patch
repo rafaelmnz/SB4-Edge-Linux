@@ -1,0 +1,138 @@
+Description: Power panel: choose what happens when the lid is closed
+ Adds a "When the Lid Is Closed" group to the Power Saving page with
+ "On Battery Power" and "When Plugged In" rows (Do Nothing / Sleep /
+ Hibernate / Shut Down), like Windows' power options. They set the
+ gnome-settings-daemon keys lid-close-battery-action and
+ lid-close-ac-action. Hidden on machines without a lid. Hibernate and
+ Shut Down only appear when the system can do them unattended.
+Author: SB4-Edge-Linux
+Forwarded: not-needed
+---
+--- a/panels/power/cc-power-panel.blp	2026-11-18 01:04:00.334750295 -0500
++++ b/panels/power/cc-power-panel.blp	2026-11-18 01:04:00.363639052 -0500
+@@ -270,6 +270,26 @@
+                 title: _("Disabling automatic suspend will result in higher power consumption. It is recommended to keep automatic suspend enabled.");
+               }
+             }
++
++            Adw.PreferencesGroup lid_close_group {
++              visible: false;
++              title: _("When the Lid Is Closed");
++              description: _("Does not apply while an external monitor is connected.");
++
++              $CcNumberRow lid_close_battery_row {
++                title: _("On _Battery Power");
++                use-underline: true;
++                value-type: string;
++                sort-type: none;
++              }
++
++              $CcNumberRow lid_close_ac_row {
++                title: _("When Plugged _In");
++                use-underline: true;
++                value-type: string;
++                sort-type: none;
++              }
++            }
+           };
+         }
+       };
+--- a/panels/power/cc-power-panel.c	2026-11-18 01:04:00.342088965 -0500
++++ b/panels/power/cc-power-panel.c	2026-11-18 01:04:00.364481056 -0500
+@@ -84,6 +84,9 @@
+     AdwSwitchRow *suspend_on_ac_switch_row;
+     AdwPreferencesGroup *suspend_on_ac_group;
+     AdwPreferencesGroup *suspend_notice_group;
++    AdwPreferencesGroup *lid_close_group;
++    CcNumberRow *lid_close_battery_row;
++    CcNumberRow *lid_close_ac_row;
+ 
+     GSettings *gsd_settings;
+     GSettings *session_settings;
+@@ -1119,12 +1122,14 @@
+     adw_preferences_page_remove (self->power_saving_page, self->suspend_on_battery_group);
+     adw_preferences_page_remove (self->power_saving_page, self->suspend_on_ac_group);
+     adw_preferences_page_remove (self->power_saving_page, self->suspend_notice_group);
++    adw_preferences_page_remove (self->power_saving_page, self->lid_close_group);
+ 
+     adw_preferences_page_add (self->general_page, self->power_saving_group);
+     adw_preferences_page_add (self->general_page, self->blank_screen_group);
+     adw_preferences_page_add (self->general_page, self->suspend_on_battery_group);
+     adw_preferences_page_add (self->general_page, self->suspend_on_ac_group);
+     adw_preferences_page_add (self->general_page, self->suspend_notice_group);
++    adw_preferences_page_add (self->general_page, self->lid_close_group);
+ 
+     /* Reset title and hide view switcher by hiding stack page */
+     gtk_stack_set_visible_child_name (self->title_stack, "title");
+@@ -1133,6 +1138,53 @@
+     ensure_power_saving_title (self);
+ }
+ 
++/* sb4edge: "When the lid is closed" on the Power Saving page, like Windows' power options: Do nothing / Sleep /
++ * Hibernate / Shut down, separately on battery and plugged in (gnome-settings-daemon keys lid-close-battery-action
++ * and lid-close-ac-action). Only shown on machines that have a lid. */
++static void
++populate_lid_close_row (CcPowerPanel *self, CcNumberRow *row)
++{
++    static const struct {
++        char *name;
++        GsdPowerActionType value;
++        size_t availability;
++    } actions[] = { { N_("Do Nothing"), GSD_POWER_ACTION_NOTHING, 0 },
++                    { N_("Sleep"), GSD_POWER_ACTION_SUSPEND, offsetof (CcPowerPanel, can_suspend) },
++                    { N_("Hibernate"), GSD_POWER_ACTION_HIBERNATE, offsetof (CcPowerPanel, can_hibernate) },
++                    { N_("Shut Down"), GSD_POWER_ACTION_SHUTDOWN, offsetof (CcPowerPanel, can_shutdown) } };
++    guint i;
++
++    for (i = 0; i < G_N_ELEMENTS (actions); i++) {
++        if (actions[i].value != GSD_POWER_ACTION_NOTHING) {
++            /* The lid closes without anyone confirming anything, so the action must work unattended */
++            ActionAvailability availability = G_STRUCT_MEMBER (ActionAvailability, self, actions[i].availability);
++            if (availability < ACTION_AUTOMATIC)
++                continue;
++        }
++        cc_number_row_add_value_full (row, actions[i].value, _(actions[i].name), CC_NUMBER_ORDER_DEFAULT);
++    }
++}
++
++static void
++setup_lid_close_section (CcPowerPanel *self)
++{
++    g_autoptr(GSettingsSchema) schema = NULL;
++
++    if (!self->up_client || !up_client_get_lid_is_present (self->up_client))
++        return;
++
++    g_object_get (self->gsd_settings, "settings-schema", &schema, NULL);
++    if (!schema || !g_settings_schema_has_key (schema, "lid-close-battery-action") ||
++        !g_settings_schema_has_key (schema, "lid-close-ac-action"))
++        return;
++
++    populate_lid_close_row (self, self->lid_close_battery_row);
++    populate_lid_close_row (self, self->lid_close_ac_row);
++    cc_number_row_bind_settings (self->lid_close_battery_row, self->gsd_settings, "lid-close-battery-action");
++    cc_number_row_bind_settings (self->lid_close_ac_row, self->gsd_settings, "lid-close-ac-action");
++    gtk_widget_set_visible (GTK_WIDGET (self->lid_close_group), TRUE);
++}
++
+ static void
+ setup_general_section (CcPowerPanel *self)
+ {
+@@ -1252,6 +1304,9 @@
+     gtk_widget_class_bind_template_child (widget_class, CcPowerPanel, suspend_on_ac_switch_row);
+     gtk_widget_class_bind_template_child (widget_class, CcPowerPanel, suspend_on_ac_group);
+     gtk_widget_class_bind_template_child (widget_class, CcPowerPanel, suspend_notice_group);
++    gtk_widget_class_bind_template_child (widget_class, CcPowerPanel, lid_close_group);
++    gtk_widget_class_bind_template_child (widget_class, CcPowerPanel, lid_close_battery_row);
++    gtk_widget_class_bind_template_child (widget_class, CcPowerPanel, lid_close_ac_row);
+ 
+     gtk_widget_class_bind_template_callback (widget_class, als_row_changed_cb);
+     gtk_widget_class_bind_template_callback (widget_class, blank_screen_switch_cb);
+@@ -1294,6 +1349,7 @@
+                      "active", G_SETTINGS_BIND_DEFAULT);
+ 
+     setup_general_section (self);
++    setup_lid_close_section (self);
+ 
+     /* populate batteries */
+     if (self->up_client) {
