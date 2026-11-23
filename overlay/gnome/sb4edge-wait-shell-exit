@@ -1,0 +1,14 @@
+#!/bin/sh
+# sb4edge: wait (at most 6 s) until no GNOME Shell holds the display device. plymouth's reboot/power-off splash
+# started while the user's shell (a user service, not part of gdm.service) still owned the screen, could not draw,
+# and never retried: the last desktop frame stayed frozen until the machine restarted. Headless shells (remote
+# desktop) hold no /dev/dri/card* and are not waited for.
+holds_card() {
+	for p in $(pgrep -x gnome-shell 2>/dev/null); do
+		ls -l /proc/$p/fd 2>/dev/null | grep -q '/dev/dri/card' && return 0
+	done
+	return 1
+}
+i=0
+while holds_card && [ $i -lt 60 ]; do sleep 0.1; i=$((i + 1)); done
+exit 0

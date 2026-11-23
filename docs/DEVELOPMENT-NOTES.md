@@ -950,3 +950,8 @@ in each user's gtk.css and /etc/skel,
     timeout killed it. After the shell, the restart took ~4 s, 3 s of it openlogi-agent (third-party Logitech tool,
     "watcher teardown exceeded the process-exit deadline timeout=3s"): laptop-only user drop-in TimeoutStopSec=1s.
     On logoff the screen keeps the last frame until GDM's new greeter shell is up (~2 s), as before.
+  - No logo on restart (user: "it freezes and then restarts"): plymouth-reboot.service is ordered after
+    display-manager.service, but the user's GNOME Shell is a user service (org.gnome.Shell@ubuntu) and still owned
+    the screen when plymouthd started (21:05:15.5 vs shell gone 16.3); plymouth never drew. Drop-ins for
+    plymouth-reboot/poweroff/halt: ExecStartPre=sb4edge-wait-shell-exit (waits <= 6 s while a gnome-shell holds a
+    /dev/dri/card* fd; headless shells hold none).

@@ -197,6 +197,8 @@ install -Dm644 /work/overlay/sb4edge-qrtr-dracut.conf "$B/etc/dracut.conf.d/sb4e
 install -Dm755 /work/overlay/dracut/95sb4edge-splash-wait/module-setup.sh "$B/usr/lib/dracut/modules.d/95sb4edge-splash-wait/module-setup.sh"
 install -Dm755 /work/overlay/dracut/95sb4edge-splash-wait/sb4edge-splash-wait.sh "$B/usr/lib/dracut/modules.d/95sb4edge-splash-wait/sb4edge-splash-wait.sh"
 install -Dm644 /work/overlay/dracut/sb4edge-splash-wait.conf "$B/etc/dracut.conf.d/sb4edge-splash-wait.conf"
+install -Dm755 /work/overlay/gnome/sb4edge-wait-shell-exit "$B/usr/lib/sb4edge/sb4edge-wait-shell-exit"
+for u in plymouth-reboot plymouth-poweroff plymouth-halt; do install -Dm644 /work/overlay/gnome/sb4edge-plymouth-after-shell.conf "$B/etc/systemd/system/$u.service.d/sb4edge-after-shell.conf"; done
 install -Dm755 /work/overlay/wifi/sb4edge-wifi-country "$B/usr/lib/sb4edge/sb4edge-wifi-country"
 install -Dm644 /work/overlay/wifi/80-sb4edge-wifi-country.rules "$B/usr/lib/udev/rules.d/80-sb4edge-wifi-country.rules"
 install -Dm644 /work/overlay/wifi/sb4edge-wifi.default "$B/etc/default/sb4edge-wifi"

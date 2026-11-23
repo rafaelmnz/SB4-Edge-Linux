@@ -96,6 +96,8 @@ cat <<EOF
 #     the setting).
 # 27. Boot: the logo appears again with the faster initramfs (the switch to the main system waits until the splash is
 #     on the panel, at most 2.5 s), and boot no longer waits ~5 s for "udev settle" (Windows unlock service).
+# 28. Restart / power off: the Ubuntu logo shows instead of the last desktop picture freezing (the splash waits until
+#     GNOME Shell has let go of the screen).
 set -eu
 KREL=$KREL
 KVER=$KVER
@@ -104,6 +106,8 @@ emb IIO out/ssc/root/usr/libexec/iio-sensor-proxy
 emb FPI overlay/fingerprint/sb4edge-fingerprint-import
 emb PLYC overlay/sb4edge-plymouthd.conf
 emb SLIM overlay/sb4edge-slim-dracut.conf
+emb WSE overlay/gnome/sb4edge-wait-shell-exit
+emb PAS overlay/gnome/sb4edge-plymouth-after-shell.conf
 emb SWM overlay/dracut/95sb4edge-splash-wait/module-setup.sh
 emb SWS overlay/dracut/95sb4edge-splash-wait/sb4edge-splash-wait.sh
 emb SWC overlay/dracut/sb4edge-splash-wait.conf
@@ -433,6 +437,12 @@ else
 			echo "  Windows drive: read-only from the next boot; right-click a folder in Files -> Unlock folder to write there"
 	fi
 fi
+
+# Shutdown splash: start it only after GNOME Shell let go of the screen.
+put WSE /usr/lib/sb4edge/sb4edge-wait-shell-exit 755 || true
+for u in plymouth-reboot plymouth-poweroff plymouth-halt; do
+	put PAS /etc/systemd/system/$u.service.d/sb4edge-after-shell.conf 644 && reload=1 || true
+done
 
 # Boot splash: no splash on simpledrm (the logo showed twice when msm took over).
 P=/etc/plymouth/plymouthd.conf
