@@ -193,6 +193,7 @@ install -Dm644 /work/overlay/sb4edge-battery.conf "$B/etc/modprobe.d/sb4edge-bat
 install -Dm644 /work/overlay/sb4edge-battery-dracut.conf "$B/etc/dracut.conf.d/sb4edge-battery.conf"
 install -Dm644 /work/overlay/sb4edge-plymouthd.conf "$B/etc/plymouth/plymouthd.conf"
 install -Dm644 /work/overlay/sb4edge-slim-dracut.conf "$B/etc/dracut.conf.d/sb4edge-slim.conf"
+install -Dm644 /work/overlay/sb4edge-qrtr-dracut.conf "$B/etc/dracut.conf.d/sb4edge-qrtr.conf"
 install -Dm755 /work/overlay/dracut/95sb4edge-splash-wait/module-setup.sh "$B/usr/lib/dracut/modules.d/95sb4edge-splash-wait/module-setup.sh"
 install -Dm755 /work/overlay/dracut/95sb4edge-splash-wait/sb4edge-splash-wait.sh "$B/usr/lib/dracut/modules.d/95sb4edge-splash-wait/sb4edge-splash-wait.sh"
 install -Dm644 /work/overlay/dracut/sb4edge-splash-wait.conf "$B/etc/dracut.conf.d/sb4edge-splash-wait.conf"

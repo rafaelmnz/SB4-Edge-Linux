@@ -964,3 +964,6 @@ in each user's gtk.css and /etc/skel,
     conf); hook timeout 2 s. To be confirmed at the next boot.
   - DHCP on PHCBP takes 5.3-5.6 s every time (lease offered ~5 s after the 4-way handshake): consistent with the
     first DISCOVER being dropped right after association and the client retrying ~4-5 s later (network side).
+  - Boot 22:41 without the qrtr force-load: the CDSP qrtr race came back (5.16 s, msm at 7.92 s, initrd 9.8 s) and the
+    splash still did not draw (hook timeout). qrtr force-load restored; it is not what blocks the splash. TEMP
+    plymouth.debug=file:/run/plymouth-debug.log for one boot.

@@ -111,6 +111,7 @@ emb SWM overlay/dracut/95sb4edge-splash-wait/module-setup.sh
 emb SWS overlay/dracut/95sb4edge-splash-wait/sb4edge-splash-wait.sh
 emb SWC overlay/dracut/sb4edge-splash-wait.conf
 emb SST overlay/gnome/sb4edge-shell-stop-timeout.conf
+emb QRTR overlay/sb4edge-qrtr-dracut.conf
 emb HOSTO overlay/sb4edge-hostonly-dracut.conf
 emb RESCUE overlay/42_sb4edge_rescue
 emb FPSVC overlay/fingerprint/sb4edge-fingerprint-import.service
@@ -456,8 +457,7 @@ put SLIM /etc/dracut.conf.d/sb4edge-slim.conf 644 && plyc=1 || true
 put SWM /usr/lib/dracut/modules.d/95sb4edge-splash-wait/module-setup.sh 755 && plyc=1 || true
 put SWS /usr/lib/dracut/modules.d/95sb4edge-splash-wait/sb4edge-splash-wait.sh 755 && plyc=1 || true
 put SWC /etc/dracut.conf.d/sb4edge-splash-wait.conf 644 && plyc=1 || true
-# (an earlier build force-loaded qrtr in the initramfs; it kept the boot splash from showing)
-[ -f /etc/dracut.conf.d/sb4edge-qrtr.conf ] && { backup /etc/dracut.conf.d/sb4edge-qrtr.conf; rm -f /etc/dracut.conf.d/sb4edge-qrtr.conf; plyc=1; }
+put QRTR /etc/dracut.conf.d/sb4edge-qrtr.conf 644 && plyc=1 || true
 # Host-only initramfs (this laptop's drivers only); the generic one is kept as <initrd>.full for a GRUB rescue entry.
 if [ ! -f /etc/dracut.conf.d/sb4edge-hostonly.conf ] && [ -d /sys/firmware/devicetree/base ]; then
 	for i in /boot/initrd.img-*; do
