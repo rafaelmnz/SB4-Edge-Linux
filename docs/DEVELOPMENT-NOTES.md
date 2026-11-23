@@ -936,3 +936,7 @@ in each user's gtk.css and /etc/skel,
     95sb4edge-splash-wait: pre-pivot hook waits (<= 2.5 s) for card*-eDP-*/enabled while plymouth runs.
   - systemd-udev-settle cost 5.55 s on the critical chain, pulled in by sb4edge-windows-unlock.service (and a
     laptop-only sb4edge-fnkeys.service). The internal UFS partitions exist before root is mounted: After=local-fs.
+  - Boot 20:47 with the country fix: REGDOM US at 12.84 s (no WORLD phase, no 11d), connect attempt 20.45 s, connected
+    28.37 s (was 28.9 / 43.1 s). Remaining: NM's first full scan (~7.6 s) and the supplicant's scan at activation
+    (~7.5 s). Full scan measured at 13.7 s while connected, 5 GHz-only 5.7 s. Laptop: PHCBP (multi-AP, 5600 MHz) set
+    to band a. The intermittent ping spikes fit bgscan simple:30:-65:300 at a -62..-65 dBm signal.

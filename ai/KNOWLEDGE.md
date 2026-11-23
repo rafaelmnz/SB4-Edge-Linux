@@ -195,6 +195,10 @@ implemented but not tested on hardware; **[open]** not solved.
   rule (80-sb4edge-wifi-country.rules) runs `iw reg set $COUNTRY` from /etc/default/sb4edge-wifi when the radio
   appears (also in the initramfs). The cfg80211 ieee80211_regdom option does not reach self-managed radios (they are
   notified only of user hints made after they register).
+- Scans are slow on WCN7850 (measured while connected: full 13.7 s, 5 GHz only 5.7 s; 6 GHz and DFS channels are
+  passive). NetworkManager's bgscan for multi-AP networks (simple:30:-65:300) scans every 30 s while the signal is
+  below -65 dBm, which shows as 100-170 ms latency spikes. For a 5 GHz network, `nmcli con modify <name>
+  802-11-wireless.band a` shortens both the connect scan and the background scans.
 
 - Wi-Fi WCN7850 (17cb:1107, board-id 255): linux-firmware lacks the board entry; reuse the shared board-id 255
   data in a board-2.bin entry (`ath12k-board2-add.py`). Samsung's Windows bdwlan.elf crashes the firmware.
