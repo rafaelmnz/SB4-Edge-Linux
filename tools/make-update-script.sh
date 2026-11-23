@@ -93,8 +93,7 @@ cat <<EOF
 # 26. Wi-Fi connects sooner after boot: set COUNTRY in /etc/default/sb4edge-wifi (e.g. COUNTRY=US). The Wi-Fi chip
 #     then skips its own country scan, which blocked every other scan for several seconds (driver rebuilt to accept
 #     the setting).
-# 27. Boot: the logo appears again with the faster initramfs (the switch to the main system waits until the splash is
-#     on the panel, at most 2.5 s), and boot no longer waits ~5 s for "udev settle" (Windows unlock service).
+# 27. Boot no longer waits ~5 s for "udev settle" (Windows unlock service).
 # 28. Restart / power off: the Ubuntu logo shows instead of the last desktop picture freezing (the splash waits until
 #     GNOME Shell has let go of the screen); when GNOME Shell hangs while quitting, it is stopped after 2 s, not 5 s.
 set -eu
@@ -107,9 +106,6 @@ emb PLYC overlay/sb4edge-plymouthd.conf
 emb SLIM overlay/sb4edge-slim-dracut.conf
 emb WSE overlay/gnome/sb4edge-wait-shell-exit
 emb PAS overlay/gnome/sb4edge-plymouth-after-shell.conf
-emb SWM overlay/dracut/95sb4edge-splash-wait/module-setup.sh
-emb SWS overlay/dracut/95sb4edge-splash-wait/sb4edge-splash-wait.sh
-emb SWC overlay/dracut/sb4edge-splash-wait.conf
 emb SST overlay/gnome/sb4edge-shell-stop-timeout.conf
 emb QRTR overlay/sb4edge-qrtr-dracut.conf
 emb HOSTO overlay/sb4edge-hostonly-dracut.conf
@@ -454,9 +450,10 @@ if ! grep -qs '^UseSimpledrm=0' "$P"; then
 fi
 # Initramfs: only this laptop's DSP firmware (the boot loader reads the whole image before the kernel starts).
 put SLIM /etc/dracut.conf.d/sb4edge-slim.conf 644 && plyc=1 || true
-put SWM /usr/lib/dracut/modules.d/95sb4edge-splash-wait/module-setup.sh 755 && plyc=1 || true
-put SWS /usr/lib/dracut/modules.d/95sb4edge-splash-wait/sb4edge-splash-wait.sh 755 && plyc=1 || true
-put SWC /etc/dracut.conf.d/sb4edge-splash-wait.conf 644 && plyc=1 || true
+# (an earlier build held the initramfs for the splash; it only waited its full timeout: removed)
+if [ -f /etc/dracut.conf.d/sb4edge-splash-wait.conf ]; then
+	rm -f /etc/dracut.conf.d/sb4edge-splash-wait.conf; rm -rf /usr/lib/dracut/modules.d/95sb4edge-splash-wait; plyc=1
+fi
 put QRTR /etc/dracut.conf.d/sb4edge-qrtr.conf 644 && plyc=1 || true
 # Host-only initramfs (this laptop's drivers only); the generic one is kept as <initrd>.full for a GRUB rescue entry.
 if [ ! -f /etc/dracut.conf.d/sb4edge-hostonly.conf ] && [ -d /sys/firmware/devicetree/base ]; then

@@ -970,3 +970,9 @@ in each user's gtk.css and /etc/skel,
   - Logoff 22:41:17: shell gone in 0.47 s, greeter session 18.07 s, greeter shell up 20.45 s (~2.6 s of last frame).
     Restart 22:41:26 from the greeter: user@1000 hit its 5 s stop timeout because claude-remote-control (laptop-only
     user service) ignored SIGTERM; laptop drop-in TimeoutStopSec=2s.
+  - CORRECTION (plymouth.debug=file log, boot 23:15): the splash DID draw in the host-only initramfs: drm renderer on
+    card1 at 3.21 s, "taking master and scanning out" 3.37 s, eDP head flushed 3.49 s, HDMI (Samsung) 3.62 s. The
+    "sb4edge: intf N AVR" message only comes with a full enable (GDM), not with plymouth's scan-out on the inherited
+    mode, so "no AVR before switch-root" never meant "no splash". The 95sb4edge-splash-wait hook therefore always ran
+    to its timeout (2-2.5 s per boot): removed (the update script deletes it). Restart 23:15: shell gone 1.2 s, splash
+    1.4 s, sync 4.3 s after the click (claude-remote-control and openlogi now stop within their caps).
