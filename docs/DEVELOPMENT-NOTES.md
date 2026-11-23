@@ -809,6 +809,13 @@ in each user's gtk.css and /etc/skel,
   position-invalidated signal instead of a 75 ms poll (13 wakeups/s per extra monitor), with a one-shot 500 ms
   re-check while a menu of a revealed bar is open; monitors-changed rebuilds only the secondary panels whose monitor
   changed geometry or scale (each full rebuild left work behind). See the extension's CHANGELOG.md.
+- Book 4 Edge Tweaks (2026-11-22): display name without "XR" (uuid sb4edge-tweaks-xr@sb4edge and schema unchanged,
+  so settings carry over). New feature `keyboard` from Keyboard Informer (kbd-informer@digitalspace.name, GPL-3.0):
+  GNOME's OSD for Caps/Num Lock driven by the keymap's state signal and "Caps"/"Num" in every top bar; the
+  original's 5×/s poll is kept only for the optional held-modifier display (off by default). Replaces the standalone
+  lock-keys-osd-xr. Background: OpenLogi's lock-key popup requests a layer-shell overlay, which GNOME lacks, so it
+  became a normal focused window and swallowed typing; turned off in OpenLogi (lock_key_notifications = false).
+  GNOME 51 has no Clutter.get_default_backend(); use global.stage.context.get_backend(). Not yet tested at login.
 - GNOME extensions merged (2026-11-21): no-screenshot-box-xr, tesseract-ocr-xr, sb4edge-overview-close and
   rustdesk-window are now one extension, sb4edge-tweaks-xr@sb4edge (features/<name>.js, one feature-<name> switch
   each in its preferences, toggled at runtime; the screenshot CSS is loaded only while that feature is on). Same

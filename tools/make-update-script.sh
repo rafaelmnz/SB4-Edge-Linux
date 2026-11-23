@@ -76,7 +76,7 @@ cat <<EOF
 # 20. Battery: the percentage no longer drops to 4 %/7 % or jumps to 100 % for a moment; Resources shows the design
 #     capacity (next boot).
 # 21. The project's own GNOME extensions (screenshot, OCR, overview, RustDesk window helper) are now one extension,
-#     Book 4 Edge Tweaks XR, with a switch per feature in its preferences; the four old ones are removed. It also cleans
+#     Book 4 Edge Tweaks, with a switch per feature in its preferences; the four old ones are removed. It also cleans
 #     up after the extra top bars of the auto-hiding top bar ("already disposed" errors and leaked work after every
 #     monitor change or unlock), and shows the accessibility menu only when "Always Show Accessibility Menu" is on,
 #     on every top bar (GNOME showed it whenever Large Text was on). From the next login.
@@ -96,6 +96,10 @@ cat <<EOF
 # 27. Boot no longer waits ~5 s for "udev settle" (Windows unlock service).
 # 28. Restart / power off: the Ubuntu logo shows instead of the last desktop picture freezing (the splash waits until
 #     GNOME Shell has let go of the screen); when GNOME Shell hangs while quitting, it is stopped after 2 s, not 5 s.
+# 29. Book 4 Edge Tweaks (no longer "XR"): new Keyboard status feature, GNOME's on-screen display for Caps Lock and
+#     Num Lock and "Caps"/"Num" in the top bar (from Keyboard Informer by Tomáš Mark, without its 5-times-a-second
+#     polling). OpenLogi's own lock-key popup took keyboard focus, so typing stopped while it was shown: turn off
+#     "lock key notifications" in OpenLogi. From the next login.
 set -eu
 KREL=$KREL
 KVER=$KVER
@@ -380,7 +384,7 @@ done
 put EXTO /usr/share/glib-2.0/schemas/90-sb4edge-extensions.gschema.override 644 && schemas=1
 if [ $schemas = 1 ]; then
 	glib-compile-schemas /usr/share/glib-2.0/schemas && echo "  extensions are on by default from the next login (unless you set your own list)"
-	echo "  own list of extensions? Turn on \"Book 4 Edge Tweaks XR\" in Extensions: it replaces the four sb4edge screenshot,"
+	echo "  own list of extensions? Turn on \"Book 4 Edge Tweaks\" in Extensions: it replaces the four sb4edge screenshot,"
 	echo "  OCR, overview and RustDesk extensions (their earlier settings are not carried over)"
 fi
 

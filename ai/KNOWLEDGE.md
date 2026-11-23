@@ -370,7 +370,15 @@ implemented but not tested on hardware; **[open]** not solved.
   `screenshot`, `ocr`, `overview`, `rustdesk`, each a `feature-<name>` key, switchable at runtime; a feature that fails
   to start is logged and skipped). Replaces no-screenshot-box-xr, tesseract-ocr-xr, sb4edge-overview-close and
   rustdesk-window; settings schema org.gnome.shell.extensions.sb4edge-tweaks-xr (same key names as the old ones).
-  Also `panels` and `accessibility` (below). Must be listed before hidetopbar in enabled-extensions.
+  Also `panels`, `accessibility` (below) and `keyboard`. Must be listed before hidetopbar in enabled-extensions.
+  Shown as "Book 4 Edge Tweaks" (2026-11-22; uuid and schema keep the old -xr name so settings carry over).
+- **Lock-key popup stole focus** [verified 2026-11-22]: the Caps/Num Lock popup was OpenLogi's (MX Master 3S tool),
+  not GNOME's; it asks for a layer-shell overlay GNOME does not support, so it opens as a normal window and takes
+  keyboard focus (typing lost while shown). Fix: `lock_key_notifications = false` in OpenLogi's config. The `keyboard`
+  feature (from Keyboard Informer, kbd-informer@digitalspace.name, GPL-3.0) shows GNOME's own OSD on the keymap's
+  caps/num lock change signal (never takes focus) and "Caps"/"Num" in every top bar; the original polled 5×/s, here
+  only the optional held-modifier display polls. GNOME 51 removed Clutter.get_default_backend(): the keymap comes
+  from global.stage.context.get_backend() [fix untested until the next login].
 - **Extra top bars leak** [verified 2026-11-21, nested 2-monitor shell]: hidetopbar-multimonitor builds a full
   Panel.Panel per extra monitor and rebuilds it on every monitor change and lock. GNOME's top bar items (date menu,
   Bluetooth, Thunderbolt, background apps, menus) connect to session-wide objects and never disconnect, so every
