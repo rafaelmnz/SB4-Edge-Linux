@@ -89,7 +89,8 @@ cat <<EOF
 #     framebuffer first). Kernel crashes leave their log again (kdump falls back to vmcore-dmesg).
 # 25. Boot: shorter black screen after rEFInd. The initramfs no longer carries other laptops' DSP firmware
 #     (113 -> 76 MB for the boot loader to read), and is built for this laptop's hardware only (184 instead of ~2570
-#     drivers, 52 MB). The full one stays as a rescue entry: hold Esc after choosing Ubuntu in rEFInd.
+#     drivers, 52 MB). The full one stays as a rescue entry: hold Esc after choosing Ubuntu in rEFInd. The NPU's
+#     message driver loads before the DSPs start (a race once stalled the boot, display included, for 5 s).
 set -eu
 KREL=$KREL
 KVER=$KVER
@@ -98,6 +99,7 @@ emb IIO out/ssc/root/usr/libexec/iio-sensor-proxy
 emb FPI overlay/fingerprint/sb4edge-fingerprint-import
 emb PLYC overlay/sb4edge-plymouthd.conf
 emb SLIM overlay/sb4edge-slim-dracut.conf
+emb QRTR overlay/sb4edge-qrtr-dracut.conf
 emb HOSTO overlay/sb4edge-hostonly-dracut.conf
 emb RESCUE overlay/42_sb4edge_rescue
 emb FPSVC overlay/fingerprint/sb4edge-fingerprint-import.service
@@ -422,6 +424,7 @@ if ! grep -qs '^UseSimpledrm=0' "$P"; then
 fi
 # Initramfs: only this laptop's DSP firmware (the boot loader reads the whole image before the kernel starts).
 put SLIM /etc/dracut.conf.d/sb4edge-slim.conf 644 && plyc=1 || true
+put QRTR /etc/dracut.conf.d/sb4edge-qrtr.conf 644 && plyc=1 || true
 # Host-only initramfs (this laptop's drivers only); the generic one is kept as <initrd>.full for a GRUB rescue entry.
 if [ ! -f /etc/dracut.conf.d/sb4edge-hostonly.conf ] && [ -d /sys/firmware/devicetree/base ]; then
 	for i in /boot/initrd.img-*; do

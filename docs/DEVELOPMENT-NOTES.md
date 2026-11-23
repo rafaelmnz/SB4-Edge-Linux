@@ -907,3 +907,18 @@ in each user's gtk.css and /etc/skel,
     uas, binfmt_misc and snd_seq_device (loaded later from /). Generic image kept as initrd.img-<ver>.full with a
     GRUB rescue entry (42_sb4edge_rescue). The kernel's built-in drivers stay (a rebuild); unused modules on disk
     never load. TEMP initcall_debug boot (zzz-sb4edge-boot-timing.cfg) to time the display bring-up.
+  - First host-only boot: msm at 7.9 s instead of 3.1 s. qrtr_smd was loaded at 2.49 s, after the CDSP was up
+    (1.98 s); its IPCRTR channel open on the CDSP edge timed out (5.16 s, "failed to create endpoint", -12) and the
+    module loading behind it waited. The next boot (same image) loaded it at 1.92 s, right as the CDSP came up, and
+    was normal: an ordering race. sb4edge-qrtr.conf force_drivers qrtr qrtr_smd (rd.driver.pre, before the
+    qcom-adsp pre-udev hook boots the DSPs). Host-only itself changed no kernel timing (msm 3.14 vs 3.18 s); the
+    loader time cannot be seen from the kernel (its clock starts at ~1.75 s on every boot).
+  - Display chain on a normal boot (initcall_debug): DP controllers probed by 2.566 s, but udev loaded
+    panel_samsung_atna33xc20 only at 2.700 s; its probe (548 ms) holds the HPD wait (~260 ms), the msm component
+    bind (2.964 s), msm init (3.136 s) and fbdev (3.297 s); first modeset done 3.736 s. The same force_drivers
+    list now also loads ps883x, pmic_glink_altmode, aux_hpd_bridge, the combo/eDP phys, msm and the panel before
+    udev. Panel timings (HPD up to 200 ms, EL_ON3 400 ms after power-on) are the panel spec and stay.
+  - Result of force-loading the display chain (boot 20:22): msm loaded at 2.00 s, but the eDP controller still
+    probed only at 2.76 s (edp phy/aux bridges waiting for the retimers and gb4e-typec), msm initialized 3.21 s (no
+    gain), and plymouth never drew: the first modeset was GDM's at 16.6 s. Reverted to qrtr/qrtr_smd only. Loaded
+    before the CDSP, the IPCRTR probe runs in the glink worker (1.48 s that boot), not inside modprobe.
