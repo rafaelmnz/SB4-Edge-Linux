@@ -940,3 +940,8 @@ in each user's gtk.css and /etc/skel,
     28.37 s (was 28.9 / 43.1 s). Remaining: NM's first full scan (~7.6 s) and the supplicant's scan at activation
     (~7.5 s). Full scan measured at 13.7 s while connected, 5 GHz-only 5.7 s. Laptop: PHCBP (multi-AP, 5600 MHz) set
     to band a. The intermittent ping spikes fit bgscan simple:30:-65:300 at a -62..-65 dBm signal.
+  - Boot 21:05: graphical.target 7.6 s after the initramfs (was 12.6 s: udev-settle gone); Wi-Fi up 29.6 s (before
+    login). Splash still missing: the hook returned after 17 ms because card1-eDP-1/enabled already reads "enabled"
+    from the firmware handover. Splash shown when the switch came >= 1.2 s after msm init (plymouth's first enable,
+    logged as "sb4edge: intf 5 AVR", ~0.6-0.8 s after msm init); missing at 0.84-0.88 s. Hook now waits for that
+    kmsg line (timeout 2.5 s).

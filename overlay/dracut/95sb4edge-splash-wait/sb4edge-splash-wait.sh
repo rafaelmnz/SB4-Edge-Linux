@@ -1,11 +1,7 @@
 #!/bin/sh
-# Wait (at most ~2.5 s) until a running plymouth has lit the internal panel (eDP connector "enabled").
+# Wait (at most 2.5 s) until plymouth has finished lighting the internal panel. The sb4edge msm patch logs
+# "sb4edge: intf N AVR" when it enables the panel's display interface; the eDP connector's "enabled" attribute is no
+# use here (it already reads "enabled" from the firmware's handover). Reading /dev/kmsg starts at the oldest
+# message and then blocks for new ones, so grep returns as soon as the line exists.
 [ -e /run/plymouth/pid ] || return 0 2>/dev/null || exit 0
-i=0
-while [ $i -lt 50 ]; do
-    for e in /sys/class/drm/card*-eDP-*/enabled; do
-        [ -r "$e" ] && [ "$(cat "$e")" = enabled ] && { i=99; break; }
-    done
-    [ $i -ge 99 ] && break
-    sleep 0.05; i=$((i + 1))
-done
+timeout 2.5 grep -q -m1 "sb4edge: intf .* AVR" /dev/kmsg 2>/dev/null || true
