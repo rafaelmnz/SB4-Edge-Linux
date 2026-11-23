@@ -89,15 +89,14 @@ cat <<EOF
 #     framebuffer first). Kernel crashes leave their log again (kdump falls back to vmcore-dmesg).
 # 25. Boot: shorter black screen after rEFInd. The initramfs no longer carries other laptops' DSP firmware
 #     (113 -> 76 MB for the boot loader to read), and is built for this laptop's hardware only (184 instead of ~2570
-#     drivers, 52 MB). The full one stays as a rescue entry: hold Esc after choosing Ubuntu in rEFInd. The NPU's
-#     message driver loads before the DSPs start (a race once stalled the boot, display included, for 5 s).
+#     drivers, 52 MB). The full one stays as a rescue entry: hold Esc after choosing Ubuntu in rEFInd.
 # 26. Wi-Fi connects sooner after boot: set COUNTRY in /etc/default/sb4edge-wifi (e.g. COUNTRY=US). The Wi-Fi chip
 #     then skips its own country scan, which blocked every other scan for several seconds (driver rebuilt to accept
 #     the setting).
 # 27. Boot: the logo appears again with the faster initramfs (the switch to the main system waits until the splash is
 #     on the panel, at most 2.5 s), and boot no longer waits ~5 s for "udev settle" (Windows unlock service).
 # 28. Restart / power off: the Ubuntu logo shows instead of the last desktop picture freezing (the splash waits until
-#     GNOME Shell has let go of the screen).
+#     GNOME Shell has let go of the screen); when GNOME Shell hangs while quitting, it is stopped after 2 s, not 5 s.
 set -eu
 KREL=$KREL
 KVER=$KVER
@@ -111,7 +110,7 @@ emb PAS overlay/gnome/sb4edge-plymouth-after-shell.conf
 emb SWM overlay/dracut/95sb4edge-splash-wait/module-setup.sh
 emb SWS overlay/dracut/95sb4edge-splash-wait/sb4edge-splash-wait.sh
 emb SWC overlay/dracut/sb4edge-splash-wait.conf
-emb QRTR overlay/sb4edge-qrtr-dracut.conf
+emb SST overlay/gnome/sb4edge-shell-stop-timeout.conf
 emb HOSTO overlay/sb4edge-hostonly-dracut.conf
 emb RESCUE overlay/42_sb4edge_rescue
 emb FPSVC overlay/fingerprint/sb4edge-fingerprint-import.service
@@ -440,6 +439,7 @@ fi
 
 # Shutdown splash: start it only after GNOME Shell let go of the screen.
 put WSE /usr/lib/sb4edge/sb4edge-wait-shell-exit 755 || true
+put SST /etc/systemd/user/org.gnome.Shell@.service.d/sb4edge-stop-timeout.conf 644 || true
 for u in plymouth-reboot plymouth-poweroff plymouth-halt; do
 	put PAS /etc/systemd/system/$u.service.d/sb4edge-after-shell.conf 644 && reload=1 || true
 done
@@ -456,7 +456,8 @@ put SLIM /etc/dracut.conf.d/sb4edge-slim.conf 644 && plyc=1 || true
 put SWM /usr/lib/dracut/modules.d/95sb4edge-splash-wait/module-setup.sh 755 && plyc=1 || true
 put SWS /usr/lib/dracut/modules.d/95sb4edge-splash-wait/sb4edge-splash-wait.sh 755 && plyc=1 || true
 put SWC /etc/dracut.conf.d/sb4edge-splash-wait.conf 644 && plyc=1 || true
-put QRTR /etc/dracut.conf.d/sb4edge-qrtr.conf 644 && plyc=1 || true
+# (an earlier build force-loaded qrtr in the initramfs; it kept the boot splash from showing)
+[ -f /etc/dracut.conf.d/sb4edge-qrtr.conf ] && { backup /etc/dracut.conf.d/sb4edge-qrtr.conf; rm -f /etc/dracut.conf.d/sb4edge-qrtr.conf; plyc=1; }
 # Host-only initramfs (this laptop's drivers only); the generic one is kept as <initrd>.full for a GRUB rescue entry.
 if [ ! -f /etc/dracut.conf.d/sb4edge-hostonly.conf ] && [ -d /sys/firmware/devicetree/base ]; then
 	for i in /boot/initrd.img-*; do

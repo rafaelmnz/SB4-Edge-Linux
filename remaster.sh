@@ -193,11 +193,11 @@ install -Dm644 /work/overlay/sb4edge-battery.conf "$B/etc/modprobe.d/sb4edge-bat
 install -Dm644 /work/overlay/sb4edge-battery-dracut.conf "$B/etc/dracut.conf.d/sb4edge-battery.conf"
 install -Dm644 /work/overlay/sb4edge-plymouthd.conf "$B/etc/plymouth/plymouthd.conf"
 install -Dm644 /work/overlay/sb4edge-slim-dracut.conf "$B/etc/dracut.conf.d/sb4edge-slim.conf"
-install -Dm644 /work/overlay/sb4edge-qrtr-dracut.conf "$B/etc/dracut.conf.d/sb4edge-qrtr.conf"
 install -Dm755 /work/overlay/dracut/95sb4edge-splash-wait/module-setup.sh "$B/usr/lib/dracut/modules.d/95sb4edge-splash-wait/module-setup.sh"
 install -Dm755 /work/overlay/dracut/95sb4edge-splash-wait/sb4edge-splash-wait.sh "$B/usr/lib/dracut/modules.d/95sb4edge-splash-wait/sb4edge-splash-wait.sh"
 install -Dm644 /work/overlay/dracut/sb4edge-splash-wait.conf "$B/etc/dracut.conf.d/sb4edge-splash-wait.conf"
 install -Dm755 /work/overlay/gnome/sb4edge-wait-shell-exit "$B/usr/lib/sb4edge/sb4edge-wait-shell-exit"
+install -Dm644 /work/overlay/gnome/sb4edge-shell-stop-timeout.conf "$B/etc/systemd/user/org.gnome.Shell@.service.d/sb4edge-stop-timeout.conf"
 for u in plymouth-reboot plymouth-poweroff plymouth-halt; do install -Dm644 /work/overlay/gnome/sb4edge-plymouth-after-shell.conf "$B/etc/systemd/system/$u.service.d/sb4edge-after-shell.conf"; done
 install -Dm755 /work/overlay/wifi/sb4edge-wifi-country "$B/usr/lib/sb4edge/sb4edge-wifi-country"
 install -Dm644 /work/overlay/wifi/80-sb4edge-wifi-country.rules "$B/usr/lib/udev/rules.d/80-sb4edge-wifi-country.rules"

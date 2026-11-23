@@ -955,3 +955,12 @@ in each user's gtk.css and /etc/skel,
     the screen when plymouthd started (21:05:15.5 vs shell gone 16.3); plymouth never drew. Drop-ins for
     plymouth-reboot/poweroff/halt: ExecStartPre=sb4edge-wait-shell-exit (waits <= 6 s while a gnome-shell holds a
     /dev/dri/card* fd; headless shells hold none).
+  - Restart 21:54: GNOME Shell hung again after "Shutting down" (last: releasing input devices; next would be the
+    DRM device) until the 5 s stop timeout; the shutdown splash then appeared (the wait works). Drop-in
+    org.gnome.Shell@.service.d TimeoutStopSec=2s (normal exits 0.5-1.1 s).
+  - Boot 21:55: the splash-wait hook timed out (2.5 s): plymouth did not draw in the initramfs at all (msm at 3.08 s,
+    switch at 6.22 s). Of the host-only boots only 20:16 showed the splash, the one boot before qrtr was force-loaded
+    (rd.driver.pre); all later ones (qrtr forced) did not. qrtr force-load removed (the update script deletes the
+    conf); hook timeout 2 s. To be confirmed at the next boot.
+  - DHCP on PHCBP takes 5.3-5.6 s every time (lease offered ~5 s after the 4-way handshake): consistent with the
+    first DISCOVER being dropped right after association and the client retrying ~4-5 s later (network side).
