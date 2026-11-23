@@ -902,3 +902,8 @@ in each user's gtk.css and /etc/skel,
     GRUB reading the 113 MB initramfs. 45 MB of it was other laptops' ADSP/CDSP firmware (ubuntu-x1e-settings
     copies all of qcom/x1e80100; ath12k QCN9274/IPQ5424/QCC2072 too). sb4edge-slim.conf removes them: 76 MB
     (backup initrd .pre-slim). GRUB timeouts were already 0. No FPDT on this laptop to time the loader.
+  - User asked to boot only this laptop's drivers: dracut hostonly strict (sb4edge-hostonly.conf), 2572 -> 184
+    modules, 76 -> 52 MB. Checked: every module loaded now that was in the generic image is in it, except exfat,
+    uas, binfmt_misc and snd_seq_device (loaded later from /). Generic image kept as initrd.img-<ver>.full with a
+    GRUB rescue entry (42_sb4edge_rescue). The kernel's built-in drivers stay (a rebuild); unused modules on disk
+    never load. TEMP initcall_debug boot (zzz-sb4edge-boot-timing.cfg) to time the display bring-up.

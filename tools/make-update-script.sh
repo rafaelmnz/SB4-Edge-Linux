@@ -88,7 +88,8 @@ cat <<EOF
 # 24. Boot: the Ubuntu logo shows once (the splash waits for the display driver instead of flashing on the firmware
 #     framebuffer first). Kernel crashes leave their log again (kdump falls back to vmcore-dmesg).
 # 25. Boot: shorter black screen after rEFInd. The initramfs no longer carries other laptops' DSP firmware
-#     (113 -> 76 MB for the boot loader to read).
+#     (113 -> 76 MB for the boot loader to read), and is built for this laptop's hardware only (184 instead of ~2570
+#     drivers, 52 MB). The full one stays as a rescue entry: hold Esc after choosing Ubuntu in rEFInd.
 set -eu
 KREL=$KREL
 KVER=$KVER
@@ -97,6 +98,8 @@ emb IIO out/ssc/root/usr/libexec/iio-sensor-proxy
 emb FPI overlay/fingerprint/sb4edge-fingerprint-import
 emb PLYC overlay/sb4edge-plymouthd.conf
 emb SLIM overlay/sb4edge-slim-dracut.conf
+emb HOSTO overlay/sb4edge-hostonly-dracut.conf
+emb RESCUE overlay/42_sb4edge_rescue
 emb FPSVC overlay/fingerprint/sb4edge-fingerprint-import.service
 emb FPDEF overlay/fingerprint/sb4edge-fingerprint.default
 emb EDID display/g9/make-g9-edid.py
@@ -419,6 +422,15 @@ if ! grep -qs '^UseSimpledrm=0' "$P"; then
 fi
 # Initramfs: only this laptop's DSP firmware (the boot loader reads the whole image before the kernel starts).
 put SLIM /etc/dracut.conf.d/sb4edge-slim.conf 644 && plyc=1 || true
+# Host-only initramfs (this laptop's drivers only); the generic one is kept as <initrd>.full for a GRUB rescue entry.
+if [ ! -f /etc/dracut.conf.d/sb4edge-hostonly.conf ] && [ -d /sys/firmware/devicetree/base ]; then
+	for i in /boot/initrd.img-*; do
+		case $i in *.full|*.pre-*|*.old) continue;; esac
+		[ -L "$i" ] || [ -f "$i.full" ] || cp -a "$i" "$i.full"
+	done
+	put HOSTO /etc/dracut.conf.d/sb4edge-hostonly.conf 644 && plyc=1 || true
+fi
+put RESCUE /etc/grub.d/42_sb4edge_rescue 755 && { command -v update-grub >/dev/null && update-grub >/dev/null 2>&1 || true; } || true
 if [ "${plyc:-0}" = 1 ] && command -v update-initramfs >/dev/null; then
 	update-initramfs -u >/dev/null 2>&1 && echo "  initramfs rebuilt (next boot)"
 fi

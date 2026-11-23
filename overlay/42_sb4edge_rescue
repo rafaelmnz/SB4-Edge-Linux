@@ -1,0 +1,20 @@
+#!/bin/sh
+# sb4edge: rescue entry with the full (generic) initramfs kept next to the host-only one.
+set -e
+. /usr/share/grub/grub-mkconfig_lib
+for full in $(ls -1v /boot/initrd.img-*.full 2>/dev/null | tac); do
+	ver=${full#/boot/initrd.img-}; ver=${ver%.full}
+	[ -f "/boot/vmlinuz-$ver" ] || continue
+	dev=$(${grub_probe} --target=device /boot)
+	echo "Found sb4edge rescue initramfs: $full" >&2
+	cat <<EOT
+menuentry 'Ubuntu (full initramfs, rescue) $ver' {
+	insmod part_gpt
+	insmod ext2
+$(prepare_grub_to_access_device "$dev" | sed 's/^/\t/')
+	linux /boot/vmlinuz-$ver root=UUID=$(${grub_probe} --target=fs_uuid /) ro $GRUB_CMDLINE_LINUX $GRUB_CMDLINE_LINUX_DEFAULT
+	initrd /boot/initrd.img-$ver.full
+}
+EOT
+	break
+done

@@ -291,6 +291,10 @@ implemented but not tested on hardware; **[open]** not solved.
 - Initramfs size: ubuntu-x1e-settings' dracut module copies all of qcom/x1e80100 (every vendor's ADSP/CDSP firmware),
   113 MB in all. GRUB reads the whole image before the kernel starts, while the screen is black after rEFInd.
   /etc/dracut.conf.d/sb4edge-slim.conf (remove_items) drops the other vendors' dirs and other ath12k chips: 76 MB.
+  On installed systems sb4edge-hostonly.conf (hostonly strict) cuts it to 52 MB / 184 modules (the 4 loaded modules it
+  lacks - exfat, uas, binfmt_misc, snd_seq_device - load from the root disk). UFS, ext4 and the phys are built in.
+  Not in the ISO (a chroot build would be host-only for the build machine). Rescue: <initrd>.full and the GRUB entry
+  from /etc/grub.d/42_sb4edge_rescue (hidden menu: hold Esc after rEFInd).
 
 ## Windows partitions from Linux
 
