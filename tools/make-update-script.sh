@@ -85,12 +85,18 @@ cat <<EOF
 #     helper reads fewer registers per check (from the next boot).
 # 23. Wi-Fi driver: after the access point switched channels (DFS), every Wi-Fi status check blocked 3 s (ath12k
 #     counted the restarted connection twice). Fixed module, used from the next boot.
+# 24. Boot: the Ubuntu logo shows once (the splash waits for the display driver instead of flashing on the firmware
+#     framebuffer first). Kernel crashes leave their log again (kdump falls back to vmcore-dmesg).
+# 25. Boot: shorter black screen after rEFInd. The initramfs no longer carries other laptops' DSP firmware
+#     (113 -> 76 MB for the boot loader to read).
 set -eu
 KREL=$KREL
 KVER=$KVER
 EOF
 emb IIO out/ssc/root/usr/libexec/iio-sensor-proxy
 emb FPI overlay/fingerprint/sb4edge-fingerprint-import
+emb PLYC overlay/sb4edge-plymouthd.conf
+emb SLIM overlay/sb4edge-slim-dracut.conf
 emb FPSVC overlay/fingerprint/sb4edge-fingerprint-import.service
 emb FPDEF overlay/fingerprint/sb4edge-fingerprint.default
 emb EDID display/g9/make-g9-edid.py
@@ -402,6 +408,19 @@ else
 		grep -qs '^ENABLED=no' /etc/default/sb4edge-windows-mount && echo "  Windows drive: kept writable (ENABLED=no)" ||
 			echo "  Windows drive: read-only from the next boot; right-click a folder in Files -> Unlock folder to write there"
 	fi
+fi
+
+# Boot splash: no splash on simpledrm (the logo showed twice when msm took over).
+P=/etc/plymouth/plymouthd.conf
+if ! grep -qs '^UseSimpledrm=0' "$P"; then
+	backup "$P"; mkdir -p /etc/plymouth; extract PLYC "$P"; chmod 644 "$P"
+	echo "updated: $P (Ubuntu logo shows once at boot)"; changed=1
+	plyc=1
+fi
+# Initramfs: only this laptop's DSP firmware (the boot loader reads the whole image before the kernel starts).
+put SLIM /etc/dracut.conf.d/sb4edge-slim.conf 644 && plyc=1 || true
+if [ "${plyc:-0}" = 1 ] && command -v update-initramfs >/dev/null; then
+	update-initramfs -u >/dev/null 2>&1 && echo "  initramfs rebuilt (next boot)"
 fi
 
 # Sound: drop alsa-base's OSS-emulation preload lines, which fail at every boot in the initramfs.

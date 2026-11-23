@@ -191,6 +191,8 @@ install -Dm644 /work/overlay/sleep/zz-sb4edge-kernel.cfg "$B/etc/default/grub.d/
 chroot "$B" depmod -a "$KVER"
 install -Dm644 /work/overlay/sb4edge-battery.conf "$B/etc/modprobe.d/sb4edge-battery.conf"
 install -Dm644 /work/overlay/sb4edge-battery-dracut.conf "$B/etc/dracut.conf.d/sb4edge-battery.conf"
+install -Dm644 /work/overlay/sb4edge-plymouthd.conf "$B/etc/plymouth/plymouthd.conf"
+install -Dm644 /work/overlay/sb4edge-slim-dracut.conf "$B/etc/dracut.conf.d/sb4edge-slim.conf"
 install -Dm644 /work/display/sb4edge-edid.bin "$B/usr/lib/firmware/edid/sb4edge-edid.bin"
 install -Dm644 /work/overlay/sb4edge-edid-dracut.conf "$B/etc/dracut.conf.d/sb4edge-edid.conf"
 # Adreno X1-85 microcode in the initramfs: msm probes there, and without it "failed to load gen70500_sqe.fw" was

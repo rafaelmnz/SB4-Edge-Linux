@@ -164,6 +164,35 @@ def smooth_menus():
             log(f"{path}: softer menu edges added")
 
 
+KDUMP = "/usr/sbin/kdump-config"
+KDUMP_ANCHOR = 'log_failure_msg "$NAME: makedumpfile --dump-dmesg failed. dmesg content will be unavailable"'
+KDUMP_FALLBACK = (
+    '\t# sb4edge: makedumpfile cannot handle this kernel ("VA Bits 52 not supported"); vmcore-dmesg reads the log\n'
+    '\t# straight from the dump, so a kernel crash still leaves its log in $KDUMP_COREDIR\n'
+    '\tif command -v vmcore-dmesg >/dev/null && vmcore-dmesg "$vmcore" > "$outfile" 2>/dev/null && [ -s "$outfile" ]; then\n'
+    '\t\tlog_action_msg "dmesg saved with vmcore-dmesg"\n'
+    '\t\treturn 0\n'
+    '\tfi\n\n')
+
+
+def kdump_dmesg_fallback():
+    """kdump on this laptop saved nothing after a kernel crash: makedumpfile rejects 52-bit VA kernels. Patch
+    kdump-config's dump_dmesg() to fall back to vmcore-dmesg (re-applied after kdump-tools updates)."""
+    try:
+        src = open(KDUMP).read()
+    except FileNotFoundError:
+        return
+    if "sb4edge: makedumpfile cannot handle" in src or src.count("\t" + KDUMP_ANCHOR) != 1:
+        return
+    new = src.replace("\t" + KDUMP_ANCHOR, KDUMP_FALLBACK + "\t" + KDUMP_ANCHOR)
+    tmp = KDUMP + ".sb4edge-tmp"
+    with open(tmp, "w") as f:
+        f.write(new)
+    os.chmod(tmp, os.stat(KDUMP).st_mode & 0o7777)
+    os.replace(tmp, KDUMP)
+    log(f"{KDUMP}: vmcore-dmesg fallback for the crash log")
+
+
 def shell_major():
     try:
         out = subprocess.run(["gnome-shell", "--version"], capture_output=True, text=True).stdout
@@ -207,4 +236,5 @@ pam_line()
 pam_skip_fprintd()
 greeter_monitors()
 smooth_menus()
+kdump_dmesg_fallback()
 extension_versions()

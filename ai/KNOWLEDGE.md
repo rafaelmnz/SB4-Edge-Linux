@@ -281,6 +281,16 @@ implemented but not tested on hardware; **[open]** not solved.
   checks until the clock is stepped, and early logs carry wrong dates.
 - Ubuntu 27.04 has no arm64 desktop ISO yet: the image is Ubuntu 26.10's ISO with every squashfs layer
   dist-upgraded to 27.04 (ports.ubuntu.com) in `remaster.sh`.
+- Boot splash: plymouth must not use simpledrm (`UseSimpledrm=0` in /etc/plymouth/plymouthd.conf). Otherwise the
+  logo shows on the firmware framebuffer, the screen blanks when msm takes over, and the logo shows a second time.
+  The setting is read from the initramfs, so run update-initramfs after changing it.
+- Kernel crash logs: makedumpfile rejects this kernel ("VA Bits 52 not supported"), so kdump saved nothing.
+  sb4edge-gnome-persist patches kdump-config's dump_dmesg() to fall back to vmcore-dmesg.
+- Out-of-tree modules loaded early (samsung_galaxybook_battery) are copied into the initramfs: after rebuilding one,
+  run update-initramfs -u, or the next boot keeps the old module.
+- Initramfs size: ubuntu-x1e-settings' dracut module copies all of qcom/x1e80100 (every vendor's ADSP/CDSP firmware),
+  113 MB in all. GRUB reads the whole image before the kernel starts, while the screen is black after rEFInd.
+  /etc/dracut.conf.d/sb4edge-slim.conf (remove_items) drops the other vendors' dirs and other ath12k chips: 76 MB.
 
 ## Windows partitions from Linux
 

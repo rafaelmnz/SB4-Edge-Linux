@@ -886,3 +886,19 @@ in each user's gtk.css and /etc/skel,
     --server runs loginctl ~2.5 times/s and wakes ~300 times/s; Citrix ServiceRecord and AuthManagerDaemon ~120
     wakeups/s each; ChatGPT's codex exec-server ~330/s; DING ~16/s (Wayland events). rustdesk-display-client
     asks the extension for the RustDesk window every 3 s (could become a D-Bus signal).
+  - Boot logo shown twice (from the user's video): plymouth started on simpledrm, msm replaced it a second later
+    (blank), and plymouth showed the logo again. UseSimpledrm=0 in plymouthd.conf (overlay/sb4edge-plymouthd.conf,
+    remaster.sh, update-script item 24), initramfs rebuilt. DeviceTimeout=8 still falls back if msm never comes.
+  - A kernel crash left no log: kdump-tools ran, but makedumpfile --dump-dmesg fails on 52-bit VA. persist patches
+    kdump-config to try vmcore-dmesg first (backup kdump-config.orig; re-applied after kdump-tools updates).
+  - Battery module fix not active after a reboot: the initramfs still held the old samsung_galaxybook_battery.ko.
+    The update script's battery step now runs update-initramfs.
+  - geoclue sometimes hangs at boot for 90 s (night light/weather wait). A TEMP drop-in on the laptop only (not
+    shipped) runs it through a wrapper that logs thread wait channels and fds if it is still starting after 20 s,
+    with TimeoutStartSec=30 and a restart. G_MESSAGES_DEBUG was not re-enabled (journal volume).
+  - Crash reports checked, not ours: gnome-software (polkit race at login), a headless gnome-shell for RustDesk,
+    fprintd (truncated core). The Ventoy stick logged one USB reset on insertion, harmless.
+  - The splash shows once (user-confirmed) but later: black from rEFInd until msm is up (~3.4 s kernel time) plus
+    GRUB reading the 113 MB initramfs. 45 MB of it was other laptops' ADSP/CDSP firmware (ubuntu-x1e-settings
+    copies all of qcom/x1e80100; ath12k QCN9274/IPQ5424/QCC2072 too). sb4edge-slim.conf removes them: 76 MB
+    (backup initrd .pre-slim). GRUB timeouts were already 0. No FPDT on this laptop to time the loader.
