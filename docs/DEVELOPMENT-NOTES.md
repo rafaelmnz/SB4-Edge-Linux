@@ -997,3 +997,16 @@ in each user's gtk.css and /etc/skel,
 - The lid-close setting in GNOME Settings (built on the laptop 2026-11-18 as +sb4edge3) had never reached the
   repo; its patch is now `patches/gnome-control-center/sb4edge-lid-close.patch`, so the ISO has it too.
 
+## 2026-11-24: Wi-Fi after resume, stable MAC, power save really off
+
+- Hotel guest Wi-Fi (open, many APs): after resume at 14:54, 25 authentication timeouts in 5 minutes against every
+  AP, then a reboot. wpa_supplicant showed REGDOM-CHANGE init=DRIVER type=WORLD right at resume: the firmware lost the
+  user country and restarted its 11d scan, and the udev "add" rule does not run on resume. New system-sleep hook
+  `overlay/wifi/sb4edge-wifi-country.sleep` (post: `iw reg set CA; iw reg set US`; an identical hint is ignored by
+  cfg80211). Run by hand while connected: init=DRIVER CA, then US, 0% loss.
+- The interface MAC differed between boots (00:03:7f:12:xx:xx, a different one each boot, also the "permanent" address): the
+  firmware generates it. NM `wifi.cloned-mac-address=stable` for ath12k (the owner's laptop pins one address).
+- `iw dev ... get power_save` said on: Ubuntu's default-wifi-powersave-on.conf (=3) was read after
+  99-sb4edge-wifi-powersave.conf. Renamed zz-...; the update script removes the old name.
+- Update script items 32-34.
+

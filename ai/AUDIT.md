@@ -46,6 +46,7 @@ repository at the commit named in its header.
 | Windows drive unlock / rename / delete | `windows/sb4edge-windows-mount`, `org.sb4edge.windows-write.policy`, `windows/sb4edge-unlock-folder.py` | Root helper run through pkexec (auth_admin). `delete-folder` runs `rm -rf` on the volume: check that only listed unlocked folders on the Windows volume (never its root) are accepted, path normalisation (realpath, relative to the volume), the rename name validation, and the mount handling (bindfs allow_other, alias binds under /run/sb4edge). |
 | BitLocker | `INSTALL.md`, `patches/cryptsetup` | Users are told to suspend BitLocker protectors once (`-RebootCount 1`). The cryptsetup patch skips unknown VMK metadata entries; check that it cannot misparse key material. |
 | Secure Boot | `README.md`, `INSTALL.md` | Must be off (unsigned kernel). Stated openly; alternatives welcome. |
+| Wi-Fi helpers | `overlay/wifi/sb4edge-wifi-country`, `sb4edge-wifi-country.sleep`, `80-sb4edge-wifi-country.rules` | Run as root from udev and after resume; they source `/etc/default/sb4edge-wifi` (root-owned) and pass only a two-letter `COUNTRY` (checked with a `[A-Z][A-Z]` pattern) to `iw reg set`. |
 | Root services | `overlay/**/*.service`, `extra/usbc/usbc.c` | Services that run as root and talk to I2C devices or the EC. |
 | Third-party binaries | `fw/`, `windows-files/`, `sensors/qcom-root`, `fluence/` | Firmware and configuration extracted from Samsung/Qualcomm Windows driver packages. Not built here; listed by hash in the manifest. |
 

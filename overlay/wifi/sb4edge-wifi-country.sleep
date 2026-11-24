@@ -1,0 +1,12 @@
+#!/bin/sh
+# sb4edge: after s2idle the ath12k firmware restarts with regdomain WORLD and runs its 11d scan, so every
+# authentication times out for minutes. Re-send the country. cfg80211 ignores a hint equal to the current
+# one, so set a different one first to force the driver to be told again.
+[ "$1" = post ] || exit 0
+COUNTRY=
+[ -r /etc/default/sb4edge-wifi ] && . /etc/default/sb4edge-wifi
+case $COUNTRY in [A-Z][A-Z]) ;; *) exit 0;; esac
+[ "$COUNTRY" = CA ] && OTHER=US || OTHER=CA
+( sleep 1; /usr/sbin/iw reg set "$OTHER"; sleep 0.3; /usr/sbin/iw reg set "$COUNTRY"
+  logger -t sb4edge-wifi "re-sent Wi-Fi country $COUNTRY after resume" ) >/dev/null 2>&1 &
+exit 0

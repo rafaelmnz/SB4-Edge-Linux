@@ -199,6 +199,16 @@ implemented but not tested on hardware; **[open]** not solved.
   passive). NetworkManager's bgscan for multi-AP networks (simple:30:-65:300) scans every 30 s while the signal is
   below -65 dBm, which shows as 100-170 ms latency spikes. For a 5 GHz network, `nmcli con modify <name>
   802-11-wireless.band a` shortens both the connect scan and the background scans.
+- After s2idle the firmware restarts with regdomain WORLD (wpa_supplicant: REGDOM-CHANGE init=DRIVER type=WORLD) and
+  its 11d scan; the udev rule does not fire (no new phy), and every auth then timed out ("send auth ... try 3/3",
+  CONN_FAILED) for 5+ minutes (2026-11-24). /usr/lib/systemd/system-sleep/sb4edge-wifi-country re-sends COUNTRY on
+  resume; it first sets another country because cfg80211 drops a user hint equal to the current one, which would
+  never reach ath12k_reg_notifier. Tested while connected: the driver applied CA then US, no disconnect.
+- MAC: the board data has no MAC, so the firmware picks a new 00:03:7f:12:xx:xx each boot (ethtool -P changes too).
+  Captive portals then ask to log in after every restart. zz-sb4edge-wifi-mac.conf sets
+  wifi.cloned-mac-address=stable (per network, from /var/lib/NetworkManager/secret_key).
+- Power save: Ubuntu's /etc/NetworkManager/conf.d/default-wifi-powersave-on.conf (wifi.powersave=3) sorts after any
+  "99-..." file, so ours must be named zz-sb4edge-wifi-powersave.conf (=2). With power save on, ath12k loses beacons.
 
 - Wi-Fi WCN7850 (17cb:1107, board-id 255): linux-firmware lacks the board entry; reuse the shared board-id 255
   data in a board-2.bin entry (`ath12k-board2-add.py`). Samsung's Windows bdwlan.elf crashes the firmware.

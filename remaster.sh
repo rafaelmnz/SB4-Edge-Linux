@@ -201,6 +201,9 @@ install -Dm755 /work/overlay/wifi/sb4edge-wifi-country "$B/usr/lib/sb4edge/sb4ed
 install -Dm644 /work/overlay/wifi/80-sb4edge-wifi-country.rules "$B/usr/lib/udev/rules.d/80-sb4edge-wifi-country.rules"
 install -Dm644 /work/overlay/wifi/sb4edge-wifi.default "$B/etc/default/sb4edge-wifi"
 install -Dm644 /work/overlay/wifi/sb4edge-wifi-country-dracut.conf "$B/etc/dracut.conf.d/sb4edge-wifi-country.conf"
+install -Dm755 /work/overlay/wifi/sb4edge-wifi-country.sleep "$B/usr/lib/systemd/system-sleep/sb4edge-wifi-country"
+install -Dm644 /work/overlay/wifi/zz-sb4edge-wifi-powersave.conf "$B/etc/NetworkManager/conf.d/zz-sb4edge-wifi-powersave.conf"
+install -Dm644 /work/overlay/wifi/zz-sb4edge-wifi-mac.conf "$B/etc/NetworkManager/conf.d/zz-sb4edge-wifi-mac.conf"
 install -Dm644 /work/display/sb4edge-edid.bin "$B/usr/lib/firmware/edid/sb4edge-edid.bin"
 install -Dm644 /work/overlay/sb4edge-edid-dracut.conf "$B/etc/dracut.conf.d/sb4edge-edid.conf"
 # Adreno X1-85 microcode in the initramfs: msm probes there, and without it "failed to load gen70500_sqe.fw" was

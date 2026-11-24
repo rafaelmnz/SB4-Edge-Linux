@@ -112,6 +112,14 @@ cat <<EOF
 # 31. Settings -> Power -> "When the Lid Is Closed" (On Battery Power / When Plugged In: Do Nothing, Sleep, Hibernate,
 #     Shut Down): GNOME Settings is rebuilt with it in the background (a few minutes, see
 #     journalctl -u sb4edge-gnome-rebuild@gnome-control-center).
+# 2026-11-24:
+# 32. Wi-Fi after sleep: the chip came back with no country set and ran its own country scan, so it could not
+#     connect for minutes after waking up. The country from /etc/default/sb4edge-wifi is now sent again on resume.
+# 33. Wi-Fi power saving is really off now (Ubuntu's default-wifi-powersave-on.conf was read after ours and turned
+#     it back on). Fewer drops and lower latency.
+# 34. Wi-Fi address stays the same at every boot (the chip made up a new one each time, so hotel/hospital guest
+#     Wi-Fi asked to log in again after every restart). One stable address per network; an existing
+#     /etc/NetworkManager/conf.d/zz-sb4edge-wifi-mac.conf is kept. Takes effect at the next connection.
 set -eu
 KREL=$KREL
 KVER=$KVER
@@ -146,6 +154,9 @@ emb WCC overlay/wifi/sb4edge-wifi-country
 emb WCR overlay/wifi/80-sb4edge-wifi-country.rules
 emb WCD overlay/wifi/sb4edge-wifi-country-dracut.conf
 emb WCF overlay/wifi/sb4edge-wifi.default
+emb WCS overlay/wifi/sb4edge-wifi-country.sleep
+emb WPS overlay/wifi/zz-sb4edge-wifi-powersave.conf
+emb WMAC overlay/wifi/zz-sb4edge-wifi-mac.conf
 emb SGBAT out/samsung_galaxybook_battery.ko
 emb SGBAT3 "$OMOD/samsung_galaxybook_battery.ko"
 emb SGKBD out/samsung_galaxybook_kbd.ko
@@ -390,6 +401,19 @@ put WCR /usr/lib/udev/rules.d/80-sb4edge-wifi-country.rules 644 && { udevadm con
 [ -f /etc/default/sb4edge-wifi ] || { extract WCF /etc/default/sb4edge-wifi; chmod 644 /etc/default/sb4edge-wifi
 	echo "added: /etc/default/sb4edge-wifi (set COUNTRY=<your country code> for a faster first Wi-Fi connection)"; }
 put WCD /etc/dracut.conf.d/sb4edge-wifi-country.conf 644 && plyc=1 || true
+put WCS /usr/lib/systemd/system-sleep/sb4edge-wifi-country 755 || true
+# Wi-Fi power save off: our file must sort after Ubuntu's default-wifi-powersave-on.conf.
+wps=0
+put WPS /etc/NetworkManager/conf.d/zz-sb4edge-wifi-powersave.conf 644 && wps=1 || true
+O=/etc/NetworkManager/conf.d/99-sb4edge-wifi-powersave.conf
+[ -f "$O" ] && { backup "$O"; rm -f "$O"; echo "removed: $O (replaced by zz-sb4edge-wifi-powersave.conf)"; changed=1; wps=1; }
+# Stable Wi-Fi address (kept if the user already has the file, e.g. with a pinned address).
+[ -f /etc/NetworkManager/conf.d/zz-sb4edge-wifi-mac.conf ] || { extract WMAC /etc/NetworkManager/conf.d/zz-sb4edge-wifi-mac.conf
+	chmod 644 /etc/NetworkManager/conf.d/zz-sb4edge-wifi-mac.conf; echo "added: /etc/NetworkManager/conf.d/zz-sb4edge-wifi-mac.conf"; changed=1; wps=1; }
+if [ $wps = 1 ] && command -v nmcli >/dev/null; then
+	nmcli general reload conf 2>/dev/null || true
+	for d in $(ls /sys/class/net 2>/dev/null); do [ -d /sys/class/net/$d/wireless ] && iw dev "$d" set power_save off 2>/dev/null || true; done
+fi
 
 # Battery driver with consistent EC reads (same kernel check; reloading it would drop the keyboard backlight driver
 # too, so it takes effect at the next boot).
